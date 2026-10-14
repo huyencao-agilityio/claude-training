@@ -57,7 +57,7 @@ class ClerkTokenVerifier:
                 algorithms=["RS256"],
                 issuer=self._issuer,
                 leeway=self._leeway,
-                options={"require": ["exp", "iat", "nbf", "iss", "sub"], "verify_exp": False},
+                options={"require": ["exp", "iat", "nbf", "iss", "sub"]},
             )
         except jwt.ExpiredSignatureError as exc:
             raise InvalidTokenError("Token expired") from exc
