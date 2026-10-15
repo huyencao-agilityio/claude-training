@@ -1,0 +1,15 @@
+:root { --border: #d0d5dd; --muted: #667085; --danger: #b42318; --ok: #067647; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #f5f6f8; color: #101828; }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+.card { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+input, select, button { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+button { background: #1d4ed8; color: #fff; border: none; cursor: pointer; }
+button:disabled { opacity: .6; cursor: default; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+.muted { color: var(--muted); }
+.message.ok { color: var(--ok); }
+.message.error { color: var(--danger); }
+.badge { font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #fee4e2; color: var(--danger); }

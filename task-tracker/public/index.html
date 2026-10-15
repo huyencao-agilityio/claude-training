@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Task Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <h1>Task Tracker</h1>
+
+    <section class="card">
+      <h2>New task</h2>
+      <form id="new-task-form">
+        <input name="title" placeholder="Title" required maxlength="200" />
+        <input name="description" placeholder="Description (optional)" />
+        <label>Due date <input name="dueDate" type="date" /></label>
+        <select name="status">
+          <option value="todo">To do</option>
+          <option value="in_progress">In progress</option>
+          <option value="done">Done</option>
+        </select>
+        <button type="submit" id="save-btn">Save</button>
+      </form>
+      <p id="form-message" class="message"></p>
+    </section>
+
+    <section class="card">
+      <form id="filter-form" class="filters">
+        <input name="search" placeholder="Search by title" />
+        <select name="status">
+          <option value="">All statuses</option>
+          <option value="todo">To do</option>
+          <option value="in_progress">In progress</option>
+          <option value="done">Done</option>
+        </select>
+        <button type="submit">Search</button>
+      </form>
+      <p id="count" class="muted"></p>
+      <table>
+        <thead>
+          <tr><th>Title</th><th>Status</th><th>Due date</th><th></th></tr>
+        </thead>
+        <tbody id="task-rows"></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
