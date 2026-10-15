@@ -1,6 +1,6 @@
 # Task Tracker (Day 2 practice)
 
-A small NestJS + PostgreSQL task tracker that goes with the tickets in [`dojo-ai-training/day-2/tickets`](../dojo-ai-training/day-2/tickets).
+A small NestJS + PostgreSQL task tracker that goes with the tickets in [`dojo-ai-training/exercises/day-2-ticket-analysis/tickets`](../dojo-ai-training/exercises/day-2-ticket-analysis/tickets).
 
 ## Requirements
 

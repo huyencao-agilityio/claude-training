@@ -1,6 +1,6 @@
 # Ticket 2 — Add Pagination to the Task List
 
-**Source:** [tickets/ticket2.md](../tickets/ticket2.md) · **Prompt:** [v1](../prompt-template.md)
+**Source:** [tickets/ticket2.md](../tickets/ticket2.md) · **Prompt:** [v1](../../../docs/prompt-template.md)
 
 ## Step 1 — My initial analysis
 
@@ -103,7 +103,7 @@
 
 ### Clarifying questions — check in code myself
 
-Checked [tasks.service.ts](../../../task-tracker/src/tasks/tasks.service.ts#L15-L27), [task.entity.ts](../../../task-tracker/src/tasks/task.entity.ts), [app.js](../../../task-tracker/public/app.js#L25-L45), [main.ts](../../../task-tracker/src/main.ts). Ran the query and timed the API against the seeded DB (2,505 tasks, Postgres 17).
+Checked [tasks.service.ts](../../../../task-tracker/src/tasks/tasks.service.ts#L15-L27), [task.entity.ts](../../../../task-tracker/src/tasks/task.entity.ts), [app.js](../../../../task-tracker/public/app.js#L25-L45), [main.ts](../../../../task-tracker/src/main.ts). Ran the query and timed the API against the seeded DB (2,505 tasks, Postgres 17).
 
 - **Current query: ordering, filters, search, indexes?**
   - `ORDER BY created_at DESC`, with no tiebreaker.
@@ -131,7 +131,7 @@ Checked [tasks.service.ts](../../../task-tracker/src/tasks/tasks.service.ts#L15-
   - Every caller gets every task, so "a user with 2,000+ tasks" really means "the whole table".
   - Per-user scoping is out of scope for this ticket.
 - **Every consumer of `GET /tasks`, and what it relies on?**
-  - In this repo: only the web UI, [app.js](../../../task-tracker/public/app.js#L31-L34).
+  - In this repo: only the web UI, [app.js](../../../../task-tracker/public/app.js#L31-L34).
     - It expects a **plain JSON array** and builds the count as `tasks.length` ("2505 task(s)").
     - Once paged, that count would show the page size, not the total. The BA decided not to show a total, so the UI text has to change.
   - The **mobile app isn't in this repo**, so I can't see what it relies on. Ask the mobile team.

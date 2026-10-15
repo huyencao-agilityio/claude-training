@@ -1,6 +1,6 @@
 # Ticket 1 — Search doesn't find tasks that obviously exist
 
-**Source:** [tickets/ticket1.md](../tickets/ticket1.md) · **Prompt:** [v1](../prompt-template.md)
+**Source:** [tickets/ticket1.md](../tickets/ticket1.md) · **Prompt:** [v1](../../../docs/prompt-template.md)
 
 ## Step 1 — My initial analysis
 
@@ -86,10 +86,10 @@
 
 ### Clarifying questions — check in code myself
 
-Checked [tasks.service.ts](../../../task-tracker/src/tasks/tasks.service.ts#L15-L27), [list-tasks.query.ts](../../../task-tracker/src/tasks/dto/list-tasks.query.ts), [app.js](../../../task-tracker/public/app.js#L25-L45). Ran the queries against the seeded DB (2,505 tasks, Postgres 17, collation `en_US.utf8`).
+Checked [tasks.service.ts](../../../../task-tracker/src/tasks/tasks.service.ts#L15-L27), [list-tasks.query.ts](../../../../task-tracker/src/tasks/dto/list-tasks.query.ts), [app.js](../../../../task-tracker/public/app.js#L25-L45). Ran the queries against the seeded DB (2,505 tasks, Postgres 17, collation `en_US.utf8`).
 
 - **Match operator: case-sensitive? prefix or anywhere?**
-  - The query is `task.title LIKE '%<term>%'` ([tasks.service.ts:19](../../../task-tracker/src/tasks/tasks.service.ts#L19)).
+  - The query is `task.title LIKE '%<term>%'` ([tasks.service.ts:19](../../../../task-tracker/src/tasks/tasks.service.ts#L19)).
   - It matches **anywhere** in the title, so the prefix theory is ruled out.
   - It is **case-sensitive**. Postgres `LIKE` is always case-sensitive, whatever the collation, so the dev vs prod collation concern doesn't apply.
   - DB result:
@@ -102,7 +102,7 @@ Checked [tasks.service.ts](../../../task-tracker/src/tasks/tasks.service.ts#L15-
 
   - **Root cause:** case sensitivity explains both examples in the ticket.
 - **Server or client search, and which filters apply?**
-  - Search runs on the **server**. The frontend sends `search` and `status` as query params ([app.js:26-31](../../../task-tracker/public/app.js#L26-L31)).
+  - Search runs on the **server**. The frontend sends `search` and `status` as query params ([app.js:26-31](../../../../task-tracker/public/app.js#L26-L31)).
   - `status` is only applied if the user picks one. By default it's "all".
   - There's no owner, user scoping or pagination: `Task` has no owner field and there's no auth.
   - So the only thing that can hide a task besides the match is a status filter the user selected.

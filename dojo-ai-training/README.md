@@ -1,0 +1,23 @@
+# Dojo AI Training
+
+Notes and practice work from the AI training.
+
+```
+dojo-ai-training/
+├── docs/        ← what I learned: summaries and reusable material
+└── exercises/   ← hands-on work, one folder per exercise
+```
+
+## Docs
+
+| File | What it covers |
+|---|---|
+| [ai-capabilities-and-limitations.md](docs/ai-capabilities-and-limitations.md) | How generative AI works and where it is strong or weak: next-token prediction, knowledge, working memory, steerability |
+| [prompt-template.md](docs/prompt-template.md) | Prompt for having AI review a ticket analysis before implementation |
+
+## Exercises
+
+| Exercise | What I did |
+|---|---|
+| [day-2-ticket-analysis](exercises/day-2-ticket-analysis/README.md) | Analyzed 5 tickets on [task-tracker](../task-tracker), then used AI to review each analysis |
+| [day-3-planning](exercises/day-3-planning/ticket5-plan.md) | Implementation plan for ticket 5 (duplicate tasks on "Save") |

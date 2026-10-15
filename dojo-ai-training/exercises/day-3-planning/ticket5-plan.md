@@ -1,6 +1,6 @@
 # Ticket 5 — Plan: Prevent duplicate tasks on "Save"
 
-**Source:** [tickets/ticket5.md](../../day-2/tickets/ticket5.md) · **Analysis:** [analysis/ticket5.md](../../day-2/analysis/ticket5.md) · **Branch:** `fix/duplicate-task-on-save`
+**Source:** [tickets/ticket5.md](../day-2-ticket-analysis/tickets/ticket5.md) · **Analysis:** [analysis/ticket5.md](../day-2-ticket-analysis/analysis/ticket5.md) · **Branch:** `fix/duplicate-task-on-save`
 
 ## 1. Root cause
 

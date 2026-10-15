@@ -1,6 +1,6 @@
 # Ticket 5 — Double-Clicking "Save" Creates Duplicate Tasks
 
-**Source:** [tickets/ticket5.md](../tickets/ticket5.md) · **Prompt:** [v1](../prompt-template.md)
+**Source:** [tickets/ticket5.md](../tickets/ticket5.md) · **Prompt:** [v1](../../../docs/prompt-template.md)
 
 ## Step 1 — My initial analysis
 
@@ -99,10 +99,10 @@
 
 ### Clarifying questions — check in code myself
 
-Checked [tasks.service.ts](../../../task-tracker/src/tasks/tasks.service.ts#L37-L45), [tasks.controller.ts](../../../task-tracker/src/tasks/tasks.controller.ts), [app.js](../../../task-tracker/public/app.js#L47-L73), [index.html](../../../task-tracker/public/index.html#L15-L26). Queried the seeded DB and sent two identical `POST /tasks` at the same time.
+Checked [tasks.service.ts](../../../../task-tracker/src/tasks/tasks.service.ts#L37-L45), [tasks.controller.ts](../../../../task-tracker/src/tasks/tasks.controller.ts), [app.js](../../../../task-tracker/public/app.js#L47-L73), [index.html](../../../../task-tracker/public/index.html#L15-L26). Queried the seeded DB and sent two identical `POST /tasks` at the same time.
 
 - **Does `TasksService.create` or the `tasks` table have a unique constraint or dedupe check?**
-  - **No.** `create` builds the entity and calls `save` with no check ([tasks.service.ts:37-45](../../../task-tracker/src/tasks/tasks.service.ts#L37-L45)).
+  - **No.** `create` builds the entity and calls `save` with no check ([tasks.service.ts:37-45](../../../../task-tracker/src/tasks/tasks.service.ts#L37-L45)).
   - The only DB constraint is the primary key on `id`, a random UUID, so every request gets a new row.
   - There's no idempotency key in the DTO, the controller or the headers.
   - **Reproduced at the API level:** two identical POSTs sent together both returned `201` and created **2 rows, 15 ms apart**. Test rows deleted afterwards.
@@ -111,11 +111,11 @@ Checked [tasks.service.ts](../../../task-tracker/src/tasks/tasks.service.ts#L37-
   - **The button is never disabled.** `#save-btn` has an id in the HTML, but `app.js` never uses it.
   - **No in-flight guard:** no "saving" flag, and every `submit` event fires a new `fetch`.
   - Enter and click both trigger `submit`, so double Enter duplicates too.
-  - `reset()` runs only **after** a successful response ([app.js:63-67](../../../task-tracker/public/app.js#L63-L67)). Until then the form keeps its values, so every extra click resends the same data.
+  - `reset()` runs only **after** a successful response ([app.js:63-67](../../../../task-tracker/public/app.js#L63-L67)). Until then the form keeps its values, so every extra click resends the same data.
   - **No "Saving…" feedback** either. On a slow connection the user sees nothing happen, which explains why users click again.
   - On error the values are kept and the message is shown. That already matches the BA, but there's no button to re-enable yet.
 - **Does anything else call `POST /tasks`?**
-  - In this repo, **only the web form** ([app.js:57](../../../task-tracker/public/app.js#L57)).
+  - In this repo, **only the web form** ([app.js:57](../../../../task-tracker/public/app.js#L57)).
   - The seed script writes straight to the DB through the repository, not the API.
   - The **mobile app isn't in this repo.** It must send the same submission key, or it keeps the bug. Tell the mobile team.
   - Make the key **optional at first** so older app versions keep working, as decided for ticket 2.

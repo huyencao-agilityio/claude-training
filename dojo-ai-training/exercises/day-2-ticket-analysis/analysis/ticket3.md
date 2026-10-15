@@ -1,6 +1,6 @@
 # Ticket 3 — Due Dates Show Up One Day Early
 
-**Source:** [tickets/ticket3.md](../tickets/ticket3.md) · **Prompt:** [v1](../prompt-template.md)
+**Source:** [tickets/ticket3.md](../tickets/ticket3.md) · **Prompt:** [v1](../../../docs/prompt-template.md)
 
 ## Step 1 — My initial analysis
 
@@ -103,11 +103,11 @@
 
 ### Clarifying questions — check in code myself
 
-Checked [app.js](../../../task-tracker/public/app.js#L9-L17), [tasks.service.ts](../../../task-tracker/src/tasks/tasks.service.ts#L37-L70), [task.entity.ts](../../../task-tracker/src/tasks/task.entity.ts), the DTOs and [seed.ts](../../../task-tracker/src/seed.ts#L12-L19). Ran the `app.js` date functions in three timezones and queried the seeded DB.
+Checked [app.js](../../../../task-tracker/public/app.js#L9-L17), [tasks.service.ts](../../../../task-tracker/src/tasks/tasks.service.ts#L37-L70), [task.entity.ts](../../../../task-tracker/src/tasks/task.entity.ts), the DTOs and [seed.ts](../../../../task-tracker/src/seed.ts#L12-L19). Ran the `app.js` date functions in three timezones and queried the seeded DB.
 
 - **How is the date-picker value converted, and how does the list format it?**
-  - Sending: `toIsoDate` builds **local midnight** of the picked day, then `toISOString()` converts it to UTC ([app.js:10-13](../../../task-tracker/public/app.js#L10-L13)). VN 20 March → `2026-03-19T17:00:00Z`.
-  - Display: `formatDueDate` takes `iso.slice(0, 10)`, the **UTC** date part ([app.js:15-17](../../../task-tracker/public/app.js#L15-L17)).
+  - Sending: `toIsoDate` builds **local midnight** of the picked day, then `toISOString()` converts it to UTC ([app.js:10-13](../../../../task-tracker/public/app.js#L10-L13)). VN 20 March → `2026-03-19T17:00:00Z`.
+  - Display: `formatDueDate` takes `iso.slice(0, 10)`, the **UTC** date part ([app.js:15-17](../../../../task-tracker/public/app.js#L15-L17)).
   - **Root cause:** the date is saved as local midnight but shown as the UTC date. Any creator east of UTC sees the day before.
   - The shift depends on the **creator's** timezone at save time, not the viewer's. `slice` ignores the browser, so everyone sees the same wrong date.
 
@@ -120,8 +120,8 @@ Checked [app.js](../../../task-tracker/public/app.js#L9-L17), [tasks.service.ts]
 
   - The UK example is only correct by coincidence: **UK users will hit the same bug from 29 March, when BST starts.**
 - **`due_date` column type, and how `isOverdue` is computed?**
-  - The column is `timestamptz` ([task.entity.ts:26](../../../task-tracker/src/tasks/task.entity.ts#L26)). It stores an instant, not a calendar day. The DB and server run in UTC.
-  - `isOverdue = status !== 'done' && dueDate < now` ([tasks.service.ts:66-69](../../../task-tracker/src/tasks/tasks.service.ts#L66-L69)).
+  - The column is `timestamptz` ([task.entity.ts:26](../../../../task-tracker/src/tasks/task.entity.ts#L26)). It stores an instant, not a calendar day. The DB and server run in UTC.
+  - `isOverdue = status !== 'done' && dueDate < now` ([tasks.service.ts:66-69](../../../../task-tracker/src/tasks/tasks.service.ts#L66-L69)).
   - **Separate bug:** this compares against the *start* of the due day in the creator's timezone. So a task is overdue from the start of 20 March for **every** user, UK and US included, not from 21 March as the BA decided.
   - Fixing the display alone won't fix the overdue flag.
 - **Where is the reminder email sent, and with what date logic?**
@@ -138,4 +138,4 @@ Checked [app.js](../../../task-tracker/public/app.js#L9-L17), [tasks.service.ts]
   - The API accepts **any ISO 8601 string** (`@IsDateString`).
   - `"2026-03-20"` (date only) is parsed as UTC midnight. `"2026-03-20T00:00:00+07:00"` is stored as-is.
   - The mobile app isn't in this repo, so its format is unknown. Ask the mobile team before choosing the new format.
-- **Side finding (create a separate ticket):** in `update`, `dueDate: null` passes validation (`@IsOptional` allows null). It then becomes `new Date(null)`, i.e. **1 Jan 1970**, instead of clearing the due date ([tasks.service.ts:54](../../../task-tracker/src/tasks/tasks.service.ts#L54)).
+- **Side finding (create a separate ticket):** in `update`, `dueDate: null` passes validation (`@IsOptional` allows null). It then becomes `new Date(null)`, i.e. **1 Jan 1970**, instead of clearing the due date ([tasks.service.ts:54](../../../../task-tracker/src/tasks/tasks.service.ts#L54)).

@@ -1,6 +1,6 @@
 # Ticket 4 — Export Tasks to CSV
 
-**Source:** [tickets/ticket4.md](../tickets/ticket4.md) · **Prompt:** [v1](../prompt-template.md)
+**Source:** [tickets/ticket4.md](../tickets/ticket4.md) · **Prompt:** [v1](../../../docs/prompt-template.md)
 
 ## Step 1 — My initial analysis
 
@@ -112,14 +112,14 @@
 
 ### Clarifying questions — check in code myself
 
-Checked [task.entity.ts](../../../task-tracker/src/tasks/task.entity.ts), [tasks.service.ts](../../../task-tracker/src/tasks/tasks.service.ts#L15-L27), [app.js](../../../task-tracker/public/app.js), [index.html](../../../task-tracker/public/index.html#L30-L40). Queried the seeded DB (2,505 tasks).
+Checked [task.entity.ts](../../../../task-tracker/src/tasks/task.entity.ts), [tasks.service.ts](../../../../task-tracker/src/tasks/tasks.service.ts#L15-L27), [app.js](../../../../task-tracker/public/app.js), [index.html](../../../../task-tracker/public/index.html#L30-L40). Queried the seeded DB (2,505 tasks).
 
 - **Does `Task` have an owner or assignee, and does auth exist?**
   - **No.** The fields are only `id`, `title`, `description`, `status`, `dueDate`, `createdAt`, `updatedAt`.
   - There's no user entity and no auth guard.
   - This confirms the BA decision: export all tasks the list shows. "Team lead's tasks" needs ownership first.
 - **How does `findAll` build the filters, and can Export reuse them?**
-  - The query builder is built inline in `findAll` ([tasks.service.ts:16-23](../../../task-tracker/src/tasks/tasks.service.ts#L16-L23)): `ORDER BY created_at DESC` plus optional `title LIKE` and `status =`.
+  - The query builder is built inline in `findAll` ([tasks.service.ts:16-23](../../../../task-tracker/src/tasks/tasks.service.ts#L16-L23)): `ORDER BY created_at DESC` plus optional `title LIKE` and `status =`.
   - To make sure the export and the list never drift apart, **extract that filter logic into one shared method** that both the list and the export call.
   - Generate the CSV **on the server** (e.g. `GET /tasks/export?search=&status=`), not in the browser. After ticket 2 the browser holds only one page, but the BA wants all matching tasks.
 - **Status of tickets 1, 2 and 3?**
@@ -127,11 +127,11 @@ Checked [task.entity.ts](../../../task-tracker/src/tasks/task.entity.ts), [tasks
   - Order the work **1 and 3 → 4**, or build the export on the shared filter method and the fixed date rule so it picks up the fixes.
   - Ticket 2 matters less: the export ignores paging either way.
 - **How does `formatDueDate` render dates?**
-  - `iso.slice(0, 10)`: the UTC date part ([app.js:15-17](../../../task-tracker/public/app.js#L15-L17)). That's the ticket 3 bug: VN 20 March shows `2026-03-19`.
+  - `iso.slice(0, 10)`: the UTC date part ([app.js:15-17](../../../../task-tracker/public/app.js#L15-L17)). That's the ticket 3 bug: VN 20 March shows `2026-03-19`.
   - **Don't copy it into the CSV.** Use the same fixed calendar-day logic as ticket 3, or the export repeats the bug.
 - **Dev notes on the BA answers:**
-  - **"Last applied filters" isn't stored anywhere.** `loadTasks` reads the form fields when it runs ([app.js:26-29](../../../task-tracker/public/app.js#L26-L29)), so an unsubmitted edit would leak into Export. The UI must save the filters on each Search and send those to Export.
-  - **Status labels live only in the frontend** (`STATUS_LABELS` in [app.js:7](../../../task-tracker/public/app.js#L7)). A server-side CSV needs the same labels, so move them to one shared place.
+  - **"Last applied filters" isn't stored anywhere.** `loadTasks` reads the form fields when it runs ([app.js:26-29](../../../../task-tracker/public/app.js#L26-L29)), so an unsubmitted edit would leak into Export. The UI must save the filters on each Search and send those to Export.
+  - **Status labels live only in the frontend** (`STATUS_LABELS` in [app.js:7](../../../../task-tracker/public/app.js#L7)). A server-side CSV needs the same labels, so move them to one shared place.
   - **"Viewer's local time" for Created/Updated at:** the server runs in UTC and doesn't know the viewer's timezone. The client must send it with the export request, e.g. `tz=Asia/Ho_Chi_Minh`.
   - **Empty values are common:** 500 tasks have no due date and 1,668 have no description. Write them as empty cells, not `null` or `—` (`—` is what the UI shows).
   - **The seed has no CSV edge cases:** no titles with commas, quotes or newlines, no Vietnamese text, nothing starting with `=+-@`. Tests must create that data themselves.
