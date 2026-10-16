@@ -1,6 +1,6 @@
 # Claude Code 101: Notes
 
-> Course: [Claude Code 101](https://academy.claude.com/courses/claude-code-101/what-is-claude-code) · Progress: 6 / 12 lessons · Last updated: 2026-10-15
+> Course: [Claude Code 101](https://academy.claude.com/courses/claude-code-101/what-is-claude-code) · Progress: 12 / 12 lessons · Last updated: 2026-10-16
 
 ## Course summary
 
@@ -24,12 +24,12 @@
 | | 4 | [Your first prompt](https://academy.claude.com/courses/claude-code-101/your-first-prompt) | Done |
 | **Daily workflow** | 5 | [The explore → plan → code → commit workflow](https://academy.claude.com/courses/claude-code-101/the-explore-plan-code-commit-workflow) | Done |
 | | 6 | [Context management](https://academy.claude.com/courses/claude-code-101/context-management) | Done |
-| | 7 | [Code review](https://academy.claude.com/courses/claude-code-101/code-review) |  |
-| **Extending Claude Code** | 8 | [The CLAUDE.md file](https://academy.claude.com/courses/claude-code-101/the-claude-md-file) |  |
-| | 9 | [Subagents](https://academy.claude.com/courses/claude-code-101/subagents) |  |
-| | 10 | [Skills](https://academy.claude.com/courses/claude-code-101/skills) |  |
-| | 11 | [MCP](https://academy.claude.com/courses/claude-code-101/mcp) |  |
-| | 12 | [Hooks](https://academy.claude.com/courses/claude-code-101/hooks) |  |
+| | 7 | [Code review](https://academy.claude.com/courses/claude-code-101/code-review) | Done |
+| **Extending Claude Code** | 8 | [The CLAUDE.md file](https://academy.claude.com/courses/claude-code-101/the-claude-md-file) | Done |
+| | 9 | [Subagents](https://academy.claude.com/courses/claude-code-101/subagents) | Done |
+| | 10 | [Skills](https://academy.claude.com/courses/claude-code-101/skills) | Done |
+| | 11 | [MCP](https://academy.claude.com/courses/claude-code-101/mcp) | Done |
+| | 12 | [Hooks](https://academy.claude.com/courses/claude-code-101/hooks) | Done |
 
 ---
 
@@ -163,3 +163,142 @@ Don't start with "write the code". Gather context and agree on a plan first, or 
 - **Turn off unused MCP servers**: each one takes space even if never used.
 - **Use subagents**: they search in their own context and return only a summary.
 - **Use CLAUDE.md**: for facts Claude needs every session.
+
+---
+
+## Lesson 7: Code review
+
+Don't trust Claude's summary of what it changed. Read the real diff, get a second opinion from a clean context, and undo the change if it went wrong.
+
+| Command | What it does | Use it when | Example |
+|---|---|---|---|
+| `/diff` | Opens a viewer of uncommitted changes, also per Claude turn (arrow keys to move, `Enter` to open a file; needs git) | **After every change**, before you trust Claude's summary | Check for unrequested edits, weakened tests, new packages, hard-coded URLs or keys |
+| `/code-review` | Second review in a **fresh context** (no session history). Runs in the background, reports findings, edits nothing unless asked. `low` = only confident findings, `high` = wider net, maybe less certain; the level is remembered | The change **deserves a second look**, not every small edit | Before committing a feature or a bug fix that touches logic |
+| `/rewind` (or `Esc` twice on an empty prompt) | Pick the prompt that caused the bad change, then "Restore code and conversation" | The **whole change is wrong** and fixing it costs more than redoing it | Claude rewrote the module in the wrong direction. Note: files changed by shell commands (e.g. package installs) are not rolled back |
+
+**Using them together**
+
+```text
+Claude finishes ─→ /diff ─→ looks wrong overall? ─→ /rewind ─→ re-prompt
+                     │
+                     └─ looks OK ─→ /code-review ─→ triage findings ─→ fix + evidence ─→ /diff ─→ commit
+```
+
+**Keep in mind**: read the actual diff, not just the summary. Issues the reviewer flags again and again can become rules in `CLAUDE.md` (next lesson). Claude Code Review for GitHub PRs is a separate team product, not needed here.
+
+---
+
+## Lesson 8: The CLAUDE.md file
+
+**CLAUDE.md is the onboarding script for your codebase.** Without it, every session starts from zero: Claude explores the code again and fills the gaps with assumptions. Claude Code reads the file at the start of every session and adds it to your prompt.
+
+**What goes in it**: your stack, your commands (dev, test, lint) and the conventions Claude can't guess.
+
+| Level | Where | Who it's for |
+|---|---|---|
+| Project | `CLAUDE.md` in the project root, committed to git | The whole team |
+| User | `CLAUDE.md` in your Claude config folder | Only you, across all your projects (personal preferences) |
+
+**Tips**
+
+- **Start without one**: work for a while, notice what you keep correcting, then run `/init`. This keeps the file short.
+- **Turn repeated corrections into rules**: ask Claude to save the rule to memory so it knows next session.
+- **Link docs, don't copy them**: write `@README.md` in CLAUDE.md and Claude reads that file.
+
+**Keep in mind**: the quality of a session depends on its context. Start small and add rules from real corrections over time.
+
+---
+
+## Lesson 9: Subagents
+
+A subagent is a helper Claude hands a task to. It works in its **own context window** and sends back **only a summary**.
+
+**The two main purposes**
+
+1. **Keep the main context clean**: heavy work such as searching the codebase or researching online fills the context with things that don't matter for the task. The subagent does that work, and the main session gets only the answer.
+2. **Run work in parallel**: Claude can split a task and run several subagents at the same time, each one on its own part.
+
+| Use a subagent when | Don't use one when |
+|---|---|
+| The search or research is big and you only need the conclusion | The task is small or you already know the file: a direct read is faster |
+| The parts are independent and can run in parallel | The task needs this conversation's history: the subagent doesn't see it |
+| You want a fixed role with limited tools, e.g. a read-only reviewer | The steps depend on each other or edit the same files |
+| You want fresh eyes with no bias from the session | You need the details yourself: a summary hides them and can be wrong |
+
+**Creating one**
+
+- Describe it to Claude and say where to save it, e.g. *"Create a code-reviewer subagent in .claude/agents/ that reviews code for bugs and readability. Make it read-only."*
+- It's a Markdown file with YAML frontmatter. The `description` tells Claude **when** to call it.
+- `.claude/agents/` is for this project and `~/.claude/agents/` is for all your projects. If the folder is new, restart Claude Code to load it.
+- Extras: persistent memory across conversations, and a `skills` key that preloads the full skills into the subagent.
+
+**Keep in mind**: a clean context is one of the best ways to stay productive. Check the subagent's summary before you act on it.
+
+---
+
+## Lesson 10: Skills
+
+A skill is know-how for **one kind of task**, written once. Claude **loads it by itself** when your request matches it.
+
+**When**: you keep explaining the same thing to Claude, e.g. commit format, review checklist, doc format.
+
+**Format**: `.claude/skills/<name>/SKILL.md` (project) or `~/.claude/skills/<name>/SKILL.md` (all your projects).
+
+```markdown
+---
+name: commit-message
+description: Write Conventional Commits messages. Use when the user asks to commit.
+---
+Steps and rules...
+```
+
+The `description` decides **when** Claude uses it, so say what it does and when.
+
+| | Loads | Use for |
+|---|---|---|
+| `CLAUDE.md` | Every session | Rules for every task |
+| Skill | Only when the request matches | Know-how for one kind of task |
+
+---
+
+## Lesson 11: MCP
+
+MCP connects Claude Code to **tools and data outside your code** (issue trackers, databases, docs), so it can read them and act, not just answer.
+
+**When**: the context lives outside the repo, e.g. a Linear/GitLab issue, up-to-date library docs (Context7).
+
+**Add**: `claude mcp add`. Types: **HTTP** (remote, hosted by the provider) or **stdio** (local process).
+
+| Scope | Who gets it |
+|---|---|
+| Local | Only you, this project |
+| User | Only you, all projects |
+| Project | Everyone, via `.mcp.json` committed to git |
+
+**Manage**: `/mcp` shows servers, status and tools; reconnect or disable from there.
+
+**Keep in mind**: each server takes context even when unused, so disable the ones you don't need. If a CLI exists (`gh`, `aws`), it's cheaper on context than an MCP server.
+
+---
+
+## Lesson 12: Hooks
+
+A hook is a **shell command Claude Code runs at a set point**, every time. CLAUDE.md is followed most of the time; a hook always runs.
+
+**When**: something must happen without fail, e.g. format after edits, block dangerous commands, log commands, notify when done.
+
+| Event | Runs | Typical use |
+|---|---|---|
+| `PreToolUse` | Before a tool call | Block `rm -rf`, edits to `.env`, commits to `main` |
+| `PostToolUse` | After a tool call | Format or lint the edited file |
+| `UserPromptSubmit` | Before Claude reads your prompt | Add context, block secrets |
+| `Stop` | When Claude finishes | Run tests, notify |
+| `Notification` | When Claude needs you | Desktop notification |
+
+**Format**: `/hooks` or `.claude/settings.json` (commit it to share with the team). Each hook has an event, an optional `matcher` (which tools) and a command. The command gets the tool input as JSON on stdin.
+
+```json
+"PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-dangerous-bash.sh" }] }]
+```
+
+**Exit codes**: `0` = go ahead, `2` = block and send stderr to Claude, other = error shown to you, nothing blocked.
