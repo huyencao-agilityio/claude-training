@@ -6,10 +6,16 @@ import { TasksService } from './tasks.service';
 
 describe('TasksService', () => {
   let service: TasksService;
-  const repository = { findOneBy: jest.fn() };
+  const queryBuilder = {
+    orderBy: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([]),
+  };
+  const repository = { findOneBy: jest.fn(), createQueryBuilder: jest.fn(() => queryBuilder) };
 
   beforeEach(async () => {
     repository.findOneBy.mockReset();
+    queryBuilder.andWhere.mockClear();
     const moduleRef = await Test.createTestingModule({
       providers: [TasksService, { provide: getRepositoryToken(Task), useValue: repository }],
     }).compile();
@@ -37,6 +43,48 @@ describe('TasksService', () => {
       repository.findOneBy.mockResolvedValue(task);
 
       await expect(service.findOne(task.id)).resolves.toEqual({ ...task, isOverdue: false });
+    });
+  });
+
+  describe('findAll', () => {
+    const searchCalls = () =>
+      queryBuilder.andWhere.mock.calls.filter(([sql]) => String(sql).includes(':search'));
+
+    it('matches the title case-insensitively with ILIKE', async () => {
+      await service.findAll({ search: 'report' });
+
+      expect(searchCalls()).toEqual([
+        ["task.title ILIKE :search ESCAPE '\\'", { search: '%report%' }],
+      ]);
+    });
+
+    it('trims spaces around the search term', async () => {
+      await service.findAll({ search: '  report  ' });
+
+      expect(searchCalls()[0][1]).toEqual({ search: '%report%' });
+    });
+
+    it.each(['', '   '])('skips the search filter for an empty term (%j)', async (search) => {
+      await service.findAll({ search });
+
+      expect(searchCalls()).toHaveLength(0);
+    });
+
+    it.each([
+      ['%', '%\\%%'],
+      ['_', '%\\_%'],
+      ['a\\b', '%a\\\\b%'],
+    ])('escapes LIKE wildcard %j so it matches literally', async (search, pattern) => {
+      await service.findAll({ search });
+
+      expect(searchCalls()[0][1]).toEqual({ search: pattern });
+    });
+
+    it('applies the status filter together with the search', async () => {
+      await service.findAll({ search: 'report', status: 'todo' });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.status = :status', { status: 'todo' });
+      expect(searchCalls()).toHaveLength(1);
     });
   });
 });
