@@ -21,3 +21,5 @@ dojo-ai-training/
 |---|---|
 | [day-2-ticket-analysis](exercises/day-2-ticket-analysis/README.md) | Analyzed 5 tickets on [task-tracker](../task-tracker), then used AI to review each analysis |
 | [day-3-planning](exercises/day-3-planning/ticket5-plan.md) | Implementation plan for ticket 5 (duplicate tasks on "Save") |
+| [day-4/explain-update-task.md](exercises/day-4/explain-update-task.md) | Had AI explain the "update task" flow end-to-end, then verified 2 of its claims |
+| [day-4/ticket1-search-fix-plan.md](exercises/day-4/ticket1-search-fix-plan.md) | Fix plan for ticket 1 (search misses tasks): root cause, fix, tests, curl checks |
