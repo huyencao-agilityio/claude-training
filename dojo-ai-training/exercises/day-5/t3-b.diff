@@ -1,0 +1,308 @@
+diff --git a/task-tracker/.env.example b/task-tracker/.env.example
+index 1f41ede..4571410 100644
+--- a/task-tracker/.env.example
++++ b/task-tracker/.env.example
+@@ -4,3 +4,5 @@ DB_PORT=5433
+ DB_USER=postgres
+ DB_PASSWORD=postgres
+ DB_NAME=task_tracker
++# IANA timezone where a task's due date ends (when it becomes overdue)
++DUE_DATE_TIMEZONE=UTC
+diff --git a/task-tracker/public/app.js b/task-tracker/public/app.js
+index 84a395e..1b30b88 100644
+--- a/task-tracker/public/app.js
++++ b/task-tracker/public/app.js
+@@ -6,14 +6,9 @@ const formMessage = document.getElementById('form-message');
+ 
+ const STATUS_LABELS = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
+ 
+-// "2026-03-20" from <input type="date"> -> ISO timestamp for the API
+-function toIsoDate(value) {
+-  const [year, month, day] = value.split('-').map(Number);
+-  return new Date(year, month - 1, day).toISOString();
+-}
+-
+-function formatDueDate(iso) {
+-  return iso ? iso.slice(0, 10) : '—';
++// Due dates are calendar dates ("2026-03-20"), sent and shown as-is so every timezone sees the same day
++function formatDueDate(date) {
++  return date ?? '—';
+ }
+ 
+ function escapeHtml(text) {
+@@ -52,7 +47,7 @@ newTaskForm.addEventListener('submit', async (event) => {
+     status: data.get('status'),
+   };
+   if (data.get('description')) body.description = data.get('description');
+-  if (data.get('dueDate')) body.dueDate = toIsoDate(data.get('dueDate'));
++  if (data.get('dueDate')) body.dueDate = data.get('dueDate');
+ 
+   const res = await fetch('/tasks', {
+     method: 'POST',
+diff --git a/task-tracker/src/seed.ts b/task-tracker/src/seed.ts
+index e39df3c..36bb423 100644
+--- a/task-tracker/src/seed.ts
++++ b/task-tracker/src/seed.ts
+@@ -9,15 +9,6 @@ const BULK_COUNT = 2500;
+ const TITLE_WORDS = ['Review', 'Update', 'Prepare', 'Fix', 'Draft', 'Plan', 'Check', 'Write'];
+ const TITLE_OBJECTS = ['budget', 'slides', 'API docs', 'onboarding', 'release notes', 'invoice list', 'roadmap', 'test plan'];
+ 
+-// Due dates as the web app stores them: midnight in the creator's local time, sent as UTC.
+-// A user in Vietnam (UTC+7) picking 20 March produces 2026-03-19T17:00:00Z.
+-const VN_OFFSET_HOURS = 7;
+-function dueAtLocalMidnight(date: string, utcOffsetHours: number): Date {
+-  const d = new Date(`${date}T00:00:00Z`);
+-  d.setUTCHours(d.getUTCHours() - utcOffsetHours);
+-  return d;
+-}
+-
+ function pick<T>(items: readonly T[], i: number): T {
+   return items[i % items.length];
+ }
+@@ -30,11 +21,11 @@ async function seed() {
+   await repo.clear();
+ 
+   const named: Partial<Task>[] = [
+-    { title: 'Monthly Report', description: 'Compile KPIs for the monthly review', status: 'todo', dueDate: dueAtLocalMidnight('2026-10-31', 0) },
+-    { title: 'Weekly Report', description: 'Created by the Vietnam team', status: 'todo', dueDate: dueAtLocalMidnight('2026-03-20', VN_OFFSET_HOURS) },
+-    { title: 'Weekly sync notes', description: 'Created by the UK team', status: 'todo', dueDate: dueAtLocalMidnight('2026-03-20', 0) },
+-    { title: 'Prepare client meeting', description: null, status: 'in_progress', dueDate: dueAtLocalMidnight('2026-10-16', VN_OFFSET_HOURS) },
+-    { title: 'Quarterly report draft', description: null, status: 'done', dueDate: dueAtLocalMidnight('2026-09-30', 0) },
++    { title: 'Monthly Report', description: 'Compile KPIs for the monthly review', status: 'todo', dueDate: '2026-10-31' },
++    { title: 'Weekly Report', description: 'Created by the Vietnam team', status: 'todo', dueDate: '2026-03-20' },
++    { title: 'Weekly sync notes', description: 'Created by the UK team', status: 'todo', dueDate: '2026-03-20' },
++    { title: 'Prepare client meeting', description: null, status: 'in_progress', dueDate: '2026-10-16' },
++    { title: 'Quarterly report draft', description: null, status: 'done', dueDate: '2026-09-30' },
+   ];
+ 
+   const bulk: Partial<Task>[] = Array.from({ length: BULK_COUNT }, (_, i) => {
+@@ -44,7 +35,7 @@ async function seed() {
+       title: `${pick(TITLE_WORDS, i)} ${pick(TITLE_OBJECTS, Math.floor(i / 8))} #${i + 1}`,
+       description: i % 3 === 0 ? 'Auto-generated sample task' : null,
+       status: pick(TASK_STATUSES, i),
+-      dueDate: i % 5 === 0 ? null : dueAtLocalMidnight(`2026-${month}-${day}`, i % 2 ? VN_OFFSET_HOURS : 0),
++      dueDate: i % 5 === 0 ? null : `2026-${month}-${day}`,
+     };
+   });
+ 
+diff --git a/task-tracker/src/tasks/dto/create-task.dto.ts b/task-tracker/src/tasks/dto/create-task.dto.ts
+index fedbd9d..35c5acb 100644
+--- a/task-tracker/src/tasks/dto/create-task.dto.ts
++++ b/task-tracker/src/tasks/dto/create-task.dto.ts
+@@ -1,4 +1,4 @@
+-import { IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
++import { IsIn, IsISO8601, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+ import { TASK_STATUSES, TaskStatus } from '../task.entity';
+ 
+ export class CreateTaskDto {
+@@ -16,6 +16,7 @@ export class CreateTaskDto {
+   status?: TaskStatus;
+ 
+   @IsOptional()
+-  @IsDateString()
++  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dueDate must be a date in YYYY-MM-DD format' })
++  @IsISO8601({ strict: true })
+   dueDate?: string;
+ }
+diff --git a/task-tracker/src/tasks/dto/task-dto.spec.ts b/task-tracker/src/tasks/dto/task-dto.spec.ts
+new file mode 100644
+index 0000000..56ab878
+--- /dev/null
++++ b/task-tracker/src/tasks/dto/task-dto.spec.ts
+@@ -0,0 +1,29 @@
++import { plainToInstance } from 'class-transformer';
++import { validate } from 'class-validator';
++import { CreateTaskDto } from './create-task.dto';
++import { UpdateTaskDto } from './update-task.dto';
++
++describe.each([
++  ['CreateTaskDto', CreateTaskDto],
++  ['UpdateTaskDto', UpdateTaskDto],
++])('%s dueDate', (_name, Dto) => {
++  const dueDateErrors = async (dueDate: unknown) => {
++    const errors = await validate(plainToInstance(Dto, { title: 'Weekly Report', dueDate }));
++    return errors.filter((e) => e.property === 'dueDate');
++  };
++
++  it('accepts a YYYY-MM-DD calendar date', async () => {
++    expect(await dueDateErrors('2026-03-20')).toHaveLength(0);
++  });
++
++  it.each(['2026-03-19T17:00:00.000Z', '2026-03-20T00:00:00+07:00'])(
++    'rejects a timestamp (%s)',
++    async (value) => {
++      expect(await dueDateErrors(value)).toHaveLength(1);
++    },
++  );
++
++  it.each(['2026-02-30', '20-03-2026', '2026-3-20'])('rejects an invalid date (%s)', async (value) => {
++    expect(await dueDateErrors(value)).toHaveLength(1);
++  });
++});
+diff --git a/task-tracker/src/tasks/dto/update-task.dto.ts b/task-tracker/src/tasks/dto/update-task.dto.ts
+index b423a8a..9941263 100644
+--- a/task-tracker/src/tasks/dto/update-task.dto.ts
++++ b/task-tracker/src/tasks/dto/update-task.dto.ts
+@@ -1,4 +1,4 @@
+-import { IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
++import { IsIn, IsISO8601, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+ import { TASK_STATUSES, TaskStatus } from '../task.entity';
+ 
+ export class UpdateTaskDto {
+@@ -17,6 +17,7 @@ export class UpdateTaskDto {
+   status?: TaskStatus;
+ 
+   @IsOptional()
+-  @IsDateString()
++  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dueDate must be a date in YYYY-MM-DD format' })
++  @IsISO8601({ strict: true })
+   dueDate?: string;
+ }
+diff --git a/task-tracker/src/tasks/task.entity.ts b/task-tracker/src/tasks/task.entity.ts
+index 4c815b9..c75755b 100644
+--- a/task-tracker/src/tasks/task.entity.ts
++++ b/task-tracker/src/tasks/task.entity.ts
+@@ -23,8 +23,9 @@ export class Task {
+   @Column({ type: 'varchar', length: 20, default: 'todo' })
+   status: TaskStatus;
+ 
+-  @Column({ name: 'due_date', type: 'timestamptz', nullable: true })
+-  dueDate: Date | null;
++  // Calendar date ("YYYY-MM-DD"), not a point in time, so every timezone sees the same day
++  @Column({ name: 'due_date', type: 'date', nullable: true })
++  dueDate: string | null;
+ 
+   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+   createdAt: Date;
+diff --git a/task-tracker/src/tasks/tasks.service.spec.ts b/task-tracker/src/tasks/tasks.service.spec.ts
+index d409ea9..5947cae 100644
+--- a/task-tracker/src/tasks/tasks.service.spec.ts
++++ b/task-tracker/src/tasks/tasks.service.spec.ts
+@@ -6,10 +6,12 @@ import { TasksService } from './tasks.service';
+ 
+ describe('TasksService', () => {
+   let service: TasksService;
+-  const repository = { findOneBy: jest.fn() };
++  const repository = { findOneBy: jest.fn(), create: jest.fn(), save: jest.fn() };
+ 
+   beforeEach(async () => {
+     repository.findOneBy.mockReset();
++    repository.create.mockReset().mockImplementation((data) => data);
++    repository.save.mockReset().mockImplementation(async (task) => task);
+     const moduleRef = await Test.createTestingModule({
+       providers: [TasksService, { provide: getRepositoryToken(Task), useValue: repository }],
+     }).compile();
+@@ -39,4 +41,70 @@ describe('TasksService', () => {
+       await expect(service.findOne(task.id)).resolves.toEqual({ ...task, isOverdue: false });
+     });
+   });
++
++  describe('due dates', () => {
++    const task = (dueDate: string | null, status: Task['status'] = 'todo') =>
++      ({
++        id: '00000000-0000-4000-8000-000000000002',
++        title: 'Weekly Report',
++        description: null,
++        status,
++        dueDate,
++      }) as Task;
++
++    afterEach(() => {
++      jest.useRealTimers();
++      delete process.env.DUE_DATE_TIMEZONE;
++    });
++
++    it('stores the calendar date the user picked on create', async () => {
++      const created = await service.create({ title: 'Weekly Report', dueDate: '2026-03-20' });
++
++      expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({ dueDate: '2026-03-20' }));
++      expect(created.dueDate).toBe('2026-03-20');
++    });
++
++    it('stores the calendar date the user picked on update', async () => {
++      repository.findOneBy.mockResolvedValue(task('2026-03-01'));
++
++      const updated = await service.update(task(null).id, { dueDate: '2026-03-20' });
++
++      expect(updated.dueDate).toBe('2026-03-20');
++    });
++
++    it('keeps the due date when an update does not send one', async () => {
++      repository.findOneBy.mockResolvedValue(task('2026-03-20'));
++
++      const updated = await service.update(task(null).id, { title: 'Weekly Report v2' });
++
++      expect(updated.dueDate).toBe('2026-03-20');
++    });
++
++    it.each([
++      ['false on the last minute of the due date', '2026-03-20T23:59:00Z', '2026-03-20', false],
++      ['true from the start of the next day', '2026-03-21T00:00:00Z', '2026-03-20', true],
++      ['false before the due date', '2026-03-19T17:00:00Z', '2026-03-20', false],
++    ])('isOverdue is %s in UTC by default', async (_when, now, dueDate, expected) => {
++      jest.useFakeTimers().setSystemTime(new Date(now));
++      repository.findOneBy.mockResolvedValue(task(dueDate));
++
++      await expect(service.findOne('id')).resolves.toMatchObject({ isOverdue: expected });
++    });
++
++    it('ends the due day in DUE_DATE_TIMEZONE when set', async () => {
++      process.env.DUE_DATE_TIMEZONE = 'Asia/Ho_Chi_Minh';
++      // 21 March 00:30 in Vietnam, still 20 March in UTC
++      jest.useFakeTimers().setSystemTime(new Date('2026-03-20T17:30:00Z'));
++      repository.findOneBy.mockResolvedValue(task('2026-03-20'));
++
++      await expect(service.findOne('id')).resolves.toMatchObject({ isOverdue: true });
++    });
++
++    it('is not overdue for a done task past its due date', async () => {
++      jest.useFakeTimers().setSystemTime(new Date('2026-03-25T00:00:00Z'));
++      repository.findOneBy.mockResolvedValue(task('2026-03-20', 'done'));
++
++      await expect(service.findOne('id')).resolves.toMatchObject({ isOverdue: false });
++    });
++  });
+ });
+diff --git a/task-tracker/src/tasks/tasks.service.ts b/task-tracker/src/tasks/tasks.service.ts
+index d683123..122c400 100644
+--- a/task-tracker/src/tasks/tasks.service.ts
++++ b/task-tracker/src/tasks/tasks.service.ts
+@@ -39,7 +39,7 @@ export class TasksService {
+       title: dto.title,
+       description: dto.description ?? null,
+       status: dto.status ?? 'todo',
+-      dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
++      dueDate: dto.dueDate ?? null,
+     });
+     return this.toResponse(await this.tasks.save(task));
+   }
+@@ -51,7 +51,7 @@ export class TasksService {
+     }
+     Object.assign(task, {
+       ...dto,
+-      dueDate: dto.dueDate !== undefined ? new Date(dto.dueDate) : task.dueDate,
++      dueDate: dto.dueDate !== undefined ? dto.dueDate : task.dueDate,
+     });
+     return this.toResponse(await this.tasks.save(task));
+   }
+@@ -64,8 +64,18 @@ export class TasksService {
+   }
+ 
+   private toResponse(task: Task): TaskResponse {
+-    const isOverdue =
+-      task.status !== 'done' && task.dueDate !== null && task.dueDate.getTime() < Date.now();
++    // Overdue once the whole due date has ended; YYYY-MM-DD strings compare in date order
++    const isOverdue = task.status !== 'done' && task.dueDate !== null && task.dueDate < this.today();
+     return { ...task, isOverdue };
+   }
++
++  // Today's date as YYYY-MM-DD in DUE_DATE_TIMEZONE (UTC by default), where due days end
++  private today(): string {
++    return new Intl.DateTimeFormat('en-CA', {
++      timeZone: process.env.DUE_DATE_TIMEZONE ?? 'UTC',
++      year: 'numeric',
++      month: '2-digit',
++      day: '2-digit',
++    }).format(new Date());
++  }
+ }

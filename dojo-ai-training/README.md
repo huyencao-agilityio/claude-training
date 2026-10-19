@@ -23,3 +23,4 @@ dojo-ai-training/
 | [day-3-planning](exercises/day-3-planning/ticket5-plan.md) | Implementation plan for ticket 5 (duplicate tasks on "Save") |
 | [day-4/explain-update-task.md](exercises/day-4/explain-update-task.md) | Had AI explain the "update task" flow end-to-end, then verified 2 of its claims |
 | [day-4/ticket1-search-fix-plan.md](exercises/day-4/ticket1-search-fix-plan.md) | Fix plan for ticket 1 (search misses tasks): root cause, fix, tests, curl checks |
+| [day-5/context-matters-results.md](exercises/day-5/context-matters-results.md) | Ran ticket 3 in a fresh session vs. one primed by reading the codebase, then compared fix quality and token cost |
