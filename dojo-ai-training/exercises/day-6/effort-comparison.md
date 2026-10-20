@@ -26,7 +26,7 @@ Root causes (not given to Claude, used for grading):
 
 - Model: `claude-opus-5-5` (VS Code extension), subscription plan.
 - Each run: `/clear`, `/effort <level>`, then the ticket. Reset the code between runs.
-- Stats from [session-stats.mjs](session-stats.mjs): `node session-stats.mjs medium=aa07929e ...`
+- Stats taken from the local Claude Code session transcripts.
 
 ## Results
 
