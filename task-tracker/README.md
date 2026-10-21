@@ -19,11 +19,26 @@ npm run start:dev      # http://localhost:3000
 
 Open http://localhost:3000 for the web UI. Stop the database with `npm run db:down`.
 
+## Tests
+
+Jest + ts-jest. Specs live next to the code in `src/`.
+
+```bash
+npm test                                      # unit tests (*.spec.ts), mocked repository, no database needed
+npm test -- src/tasks/tasks.service.spec.ts   # one file
+npm test -- -t "throws NotFoundException"     # one test by name
+
+npm run db:up                                 # start PostgreSQL first
+npm run test:db                               # DB tests (*.db.spec.ts) against the real PostgreSQL
+```
+
+DB tests run each test in a transaction that is rolled back, so they don't change your seeded data. `npm test` skips them.
+
 ## API
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/tasks?search=&status=` | List tasks, newest first. `status`: `todo`, `in_progress`, `done` |
+| GET | `/tasks?search=&status=` | List tasks, newest first. `search` matches part of the title, case-insensitive. `status`: `todo`, `in_progress`, `done` |
 | GET | `/tasks/:id` | One task |
 | POST | `/tasks` | `{ title, description?, status?, dueDate? }`, `dueDate` is an ISO 8601 string |
 | PATCH | `/tasks/:id` | Any of the fields above |

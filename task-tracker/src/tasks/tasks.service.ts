@@ -8,6 +8,9 @@ import { Task } from './task.entity';
 
 export type TaskResponse = Task & { isOverdue: boolean };
 
+// Escape LIKE special characters so the search term is matched literally.
+const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
+
 @Injectable()
 export class TasksService {
   constructor(@InjectRepository(Task) private readonly tasks: Repository<Task>) {}
@@ -15,8 +18,9 @@ export class TasksService {
   async findAll(query: ListTasksQuery): Promise<TaskResponse[]> {
     const qb = this.tasks.createQueryBuilder('task').orderBy('task.createdAt', 'DESC');
 
-    if (query.search) {
-      qb.andWhere('task.title LIKE :search', { search: `%${query.search}%` });
+    const search = query.search?.trim();
+    if (search) {
+      qb.andWhere("task.title ILIKE :search ESCAPE '\\'", { search: `%${escapeLike(search)}%` });
     }
     if (query.status) {
       qb.andWhere('task.status = :status', { status: query.status });
