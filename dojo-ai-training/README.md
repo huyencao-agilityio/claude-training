@@ -13,6 +13,7 @@ dojo-ai-training/
 | File | What it covers |
 |---|---|
 | [ai-capabilities-and-limitations.md](docs/ai-capabilities-and-limitations.md) | How generative AI works and where it is strong or weak: next-token prediction, knowledge, working memory, steerability |
+| [introduction-to-agent-skills.md](docs/introduction-to-agent-skills.md) | Notes on the Introduction to Agent Skills course: what a skill is, how it loads, where it lives, skills vs. CLAUDE.md and slash commands |
 | [prompt-template.md](docs/prompt-template.md) | Prompt for having AI review a ticket analysis before implementation |
 
 ## Exercises
