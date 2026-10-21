@@ -9,17 +9,62 @@ describe('TasksService', () => {
   const queryBuilder = {
     orderBy: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
-    getMany: jest.fn().mockResolvedValue([]),
+    getMany: jest.fn(),
   };
   const repository = { findOneBy: jest.fn(), createQueryBuilder: jest.fn(() => queryBuilder) };
 
   beforeEach(async () => {
     repository.findOneBy.mockReset();
     queryBuilder.andWhere.mockClear();
+    queryBuilder.getMany.mockReset().mockResolvedValue([]);
     const moduleRef = await Test.createTestingModule({
       providers: [TasksService, { provide: getRepositoryToken(Task), useValue: repository }],
     }).compile();
     service = moduleRef.get(TasksService);
+  });
+
+  describe('findAll', () => {
+    it('adds no overdue condition when overdue is omitted', async () => {
+      await service.findAll({});
+
+      expect(queryBuilder.andWhere).not.toHaveBeenCalled();
+    });
+
+    it('keeps only not-done tasks with a past due date when overdue is true', async () => {
+      await service.findAll({ overdue: true });
+
+      // excludes done tasks even when past due, and tasks with no due date
+      expect(queryBuilder.andWhere).toHaveBeenCalledTimes(1);
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "task.status != 'done' AND task.dueDate IS NOT NULL AND task.dueDate < :now",
+        { now: expect.any(Date) },
+      );
+    });
+
+    it('keeps done, undated and future tasks when overdue is false', async () => {
+      await service.findAll({ overdue: false });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "(task.status = 'done' OR task.dueDate IS NULL OR task.dueDate >= :now)",
+        { now: expect.any(Date) },
+      );
+    });
+
+    it('combines overdue with search and status', async () => {
+      await service.findAll({ search: 'report', status: 'todo', overdue: true });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledTimes(3);
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith("task.title ILIKE :search ESCAPE '\\'", {
+        search: '%report%',
+      });
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.status = :status', {
+        status: 'todo',
+      });
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "task.status != 'done' AND task.dueDate IS NOT NULL AND task.dueDate < :now",
+        { now: expect.any(Date) },
+      );
+    });
   });
 
   describe('findOne', () => {

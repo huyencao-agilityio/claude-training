@@ -25,6 +25,16 @@ export class TasksService {
     if (query.status) {
       qb.andWhere('task.status = :status', { status: query.status });
     }
+    // Same rule as isOverdue in toResponse, but in SQL so the filter runs in the query
+    if (query.overdue === true) {
+      qb.andWhere("task.status != 'done' AND task.dueDate IS NOT NULL AND task.dueDate < :now", {
+        now: new Date(),
+      });
+    } else if (query.overdue === false) {
+      qb.andWhere("(task.status = 'done' OR task.dueDate IS NULL OR task.dueDate >= :now)", {
+        now: new Date(),
+      });
+    }
 
     const tasks = await qb.getMany();
     return tasks.map((task) => this.toResponse(task));
