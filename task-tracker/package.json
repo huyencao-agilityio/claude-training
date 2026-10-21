@@ -9,7 +9,8 @@
     "seed": "ts-node src/seed.ts",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
-    "test": "jest"
+    "test": "jest",
+    "test:db": "jest --testPathIgnorePatterns=/node_modules/ --testRegex \"\\\\.db\\\\.spec\\\\.ts$\""
   },
   "dependencies": {
     "@nestjs/common": "^11.2.7",
@@ -40,6 +41,10 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "rootDir": "src"
+    "rootDir": "src",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.db\\.spec\\.ts$"
+    ]
   }
 }
