@@ -19,7 +19,7 @@ npm test             # Jest; one file: npm test -- <path>, one test: -t "<name>"
 
 - Validate input with DTOs + class-validator. The global `ValidationPipe({ whitelist: true })` silently drops any field without a decorator.
 - Business logic lives in `TasksService`; controllers only call the service.
-- Services return `TaskResponse` (entity + computed `isOverdue`, not stored).
+- Services return `TaskResponse` (entity + computed `isOverdue`, not stored). List methods return a page of them: `{ items: TaskResponse[], total, page, limit }` (`TaskPage`).
 - New entities go in the `entities` list in `src/data-source.ts` (shared by the app and `src/seed.ts`).
 - Every bug fix has a test that fails first, then passes. Every feature has tests for its edge cases and validation errors.
 - Specs sit next to the code as `*.spec.ts` and mock the repository (no DB). Run them and report the real result before saying you're done.
