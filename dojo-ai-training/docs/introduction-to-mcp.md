@@ -1,6 +1,6 @@
 # Introduction to MCP: Notes
 
-> Course: [Introduction to Model Context Protocol](https://academy.claude.com/courses/introduction-to-model-context-protocol/introducing-mcp) · Progress: 9 / 11 lessons · Last updated: 2026-10-22
+> Course: [Introduction to Model Context Protocol](https://academy.claude.com/courses/introduction-to-model-context-protocol/introducing-mcp) · Progress: 9 / 9 lessons · Last updated: 2026-10-22
 
 ## Course map
 
@@ -15,8 +15,6 @@
 | | 7 | [Accessing resources](https://academy.claude.com/courses/introduction-to-model-context-protocol/accessing-resources) | Done |
 | | 8 | [Defining prompts](https://academy.claude.com/courses/introduction-to-model-context-protocol/defining-prompts) | Done |
 | | 9 | [Prompts in the client](https://academy.claude.com/courses/introduction-to-model-context-protocol/prompts-in-the-client) | Done |
-| **Wrap-up** | 10 | [Final assessment on MCP](https://academy.claude.com/courses/introduction-to-model-context-protocol/final-assessment-on-mcp) | |
-| | 11 | [MCP review](https://academy.claude.com/courses/introduction-to-model-context-protocol/mcp-review) | |
 
 ---
 
