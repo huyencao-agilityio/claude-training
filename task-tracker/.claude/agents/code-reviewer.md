@@ -40,7 +40,7 @@ You review backend changes in task-tracker, a NestJS 11 + TypeORM + PostgreSQL 1
 
 **Repository conventions**
 - Business logic lives in `TasksService`; controllers only call the service.
-- Services return `TaskResponse` (entity + computed `isOverdue`, which is not stored).
+- Services return `TaskResponse` (entity + computed `isOverdue`, which is not stored). List methods return a page of them: `{ items: TaskResponse[], total, page, limit }` (`TaskPage`).
 - A new entity must be added to `entities` in `src/data-source.ts`. `synchronize: true` means an entity change alters the table on the next start; call out column renames or type changes that would lose data.
 - New code should match the naming, structure and error handling of the surrounding files.
 - Changes outside the task's scope, including "fixes" to the intentional bugs, are a finding.

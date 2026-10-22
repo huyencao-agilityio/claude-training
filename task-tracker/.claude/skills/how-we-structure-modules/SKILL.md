@@ -50,7 +50,7 @@ update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTaskDto) {
 - Throw Nest HTTP exceptions here, with the id in the message: `throw new NotFoundException(\`Task ${id} not found\`)`. `update` and `remove` check for a missing row too (`remove` checks `result.affected`).
 - `create` maps the DTO to the entity field by field, with `?? null` for optional fields and defaults set in code (`status: dto.status ?? 'todo'`).
 - `update` (PATCH) only changes fields the request sent: test `!== undefined`, not truthiness, so `null` and `""` still reach validation.
-- Every public method returns the response type (`TaskResponse`) through a private `toResponse()`. Computed fields such as `isOverdue` are added there and never stored.
+- Every public method returns the response type (`TaskResponse`) through a private `toResponse()`. Computed fields such as `isOverdue` are added there and never stored. List methods are paginated and return `{ items: TaskResponse[], total, page, limit }` (`TaskPage`), with `items` mapped through `toResponse()`.
 - Filters use the query builder with named parameters (`:search`), never string concatenation. If a filter repeats a rule from `toResponse` in SQL (like `overdue`), say so in a comment so the two stay in sync.
 - One module does not use another module's repository. It imports that module and calls its service, which the other module lists in `exports`.
 
