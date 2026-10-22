@@ -14,6 +14,7 @@ dojo-ai-training/
 |---|---|
 | [ai-capabilities-and-limitations.md](docs/ai-capabilities-and-limitations.md) | How generative AI works and where it is strong or weak: next-token prediction, knowledge, working memory, steerability |
 | [introduction-to-agent-skills.md](docs/introduction-to-agent-skills.md) | Notes on the Introduction to Agent Skills course: what a skill is, how it loads, where it lives, skills vs. CLAUDE.md and slash commands |
+| [introduction-to-mcp.md](docs/introduction-to-mcp.md) | Notes on the Introduction to Model Context Protocol course: what MCP is, MCP servers vs. clients, MCP vs. tool use, transports, ListTools / CallTool flow, defining tools with the Python SDK, testing servers with the MCP Inspector, implementing a client, defining and reading resources, defining and using prompts |
 | [prompt-template.md](docs/prompt-template.md) | Prompt for having AI review a ticket analysis before implementation |
 
 ## Exercises
