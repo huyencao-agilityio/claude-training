@@ -38,7 +38,7 @@ DB tests run each test in a transaction that is rolled back, so they don't chang
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/tasks?search=&status=` | List tasks, newest first. `search` matches part of the title, case-insensitive. `status`: `todo`, `in_progress`, `done` |
+| GET | `/tasks?search=&status=&overdue=&page=&limit=` | List tasks, newest first, one page at a time: `{ items, total, page, limit }`. `search` matches part of the title, case-insensitive. `status`: `todo`, `in_progress`, `done`. `overdue`: `true` or `false`. `page` is 1–10000 (default 1); `limit` is 1–100 (default 20). Out-of-range values return 400 |
 | GET | `/tasks/:id` | One task |
 | POST | `/tasks` | `{ title, description?, status?, dueDate? }`, `dueDate` is an ISO 8601 string |
 | PATCH | `/tasks/:id` | Any of the fields above |

@@ -13,3 +13,4 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .message.ok { color: var(--ok); }
 .message.error { color: var(--danger); }
 .badge { font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #fee4e2; color: var(--danger); }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }

@@ -8,15 +8,23 @@ describe('TasksService', () => {
   let service: TasksService;
   const queryBuilder = {
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
-    getMany: jest.fn(),
+    getManyAndCount: jest.fn(),
   };
-  const repository = { findOneBy: jest.fn(), createQueryBuilder: jest.fn(() => queryBuilder) };
+  const repository = {
+    findOneBy: jest.fn(),
+    createQueryBuilder: jest.fn(() => queryBuilder),
+    manager: { transaction: jest.fn() },
+  };
 
   beforeEach(async () => {
     repository.findOneBy.mockReset();
-    queryBuilder.andWhere.mockClear();
-    queryBuilder.getMany.mockReset().mockResolvedValue([]);
+    repository.manager.transaction.mockReset();
+    Object.values(queryBuilder).forEach((fn) => fn.mockClear());
+    queryBuilder.getManyAndCount.mockReset().mockResolvedValue([[], 0]);
     const moduleRef = await Test.createTestingModule({
       providers: [TasksService, { provide: getRepositoryToken(Task), useValue: repository }],
     }).compile();
@@ -64,6 +72,72 @@ describe('TasksService', () => {
         "task.status != 'done' AND task.dueDate IS NOT NULL AND task.dueDate < :now",
         { now: expect.any(Date) },
       );
+    });
+  });
+
+  describe('findAll pagination', () => {
+    it('returns the first page of 20 tasks by default', async () => {
+      await expect(service.findAll({})).resolves.toEqual({ items: [], total: 0, page: 1, limit: 20 });
+
+      expect(queryBuilder.skip).toHaveBeenCalledWith(0);
+      expect(queryBuilder.take).toHaveBeenCalledWith(20);
+    });
+
+    it('skips the tasks of the previous pages', async () => {
+      await service.findAll({ page: 3, limit: 50 });
+
+      expect(queryBuilder.skip).toHaveBeenCalledWith(100);
+      expect(queryBuilder.take).toHaveBeenCalledWith(50);
+    });
+
+    it('breaks createdAt ties by id so pages do not overlap', async () => {
+      await service.findAll({});
+
+      expect(queryBuilder.orderBy).toHaveBeenCalledTimes(1);
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith('task.createdAt', 'DESC');
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledTimes(1);
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith('task.id', 'DESC');
+      // orderBy replaces any earlier ordering, so id must be added after createdAt
+      expect(queryBuilder.addOrderBy.mock.invocationCallOrder[0]).toBeGreaterThan(
+        queryBuilder.orderBy.mock.invocationCallOrder[0],
+      );
+    });
+
+    // A transaction per list request costs extra round trips and holds a pooled connection
+    it('reads the page and the total without opening a transaction', async () => {
+      await service.findAll({});
+
+      expect(repository.manager.transaction).not.toHaveBeenCalled();
+      expect(queryBuilder.getManyAndCount).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns the page items with isOverdue and the total of all matching tasks', async () => {
+      const task = {
+        id: '00000000-0000-4000-8000-000000000001',
+        title: 'Write report',
+        description: null,
+        status: 'todo',
+        dueDate: new Date('2000-01-01T00:00:00Z'),
+      } as Task;
+      queryBuilder.getManyAndCount.mockResolvedValue([[task], 41]);
+
+      await expect(service.findAll({ status: 'todo', page: 3 })).resolves.toEqual({
+        items: [{ ...task, isOverdue: true }],
+        total: 41,
+        page: 3,
+        limit: 20,
+      });
+    });
+
+    it('returns no items but the real total for a page past the end', async () => {
+      queryBuilder.getManyAndCount.mockResolvedValue([[], 41]);
+
+      await expect(service.findAll({ page: 99 })).resolves.toEqual({
+        items: [],
+        total: 41,
+        page: 99,
+        limit: 20,
+      });
     });
   });
 
