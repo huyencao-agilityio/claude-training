@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse hook for Bash: blocks `rm -rf` and `git push --force`.
+# PreToolUse hook for Bash: blocks `rm -rf`, `git push --force` and `DROP TABLE/DATABASE`.
 # Exit 2 blocks the command and sends stderr back to Claude.
 
 cmd=$(jq -r '.tool_input.command // ""')
@@ -21,6 +21,11 @@ fi
 if echo "$cmd" | grep -Eq 'git[[:space:]]+push' &&
    echo "$cmd" | grep -Eq '[[:space:]](--force(-with-lease)?(=[^[:space:]]*)?|-f)([[:space:]]|$)'; then
   block "git push --force"
+fi
+
+# SQL that drops a table or database, any letter case
+if echo "$cmd" | grep -Eiq 'drop[[:space:]]+(table|database)'; then
+  block "DROP TABLE/DATABASE"
 fi
 
 exit 0
