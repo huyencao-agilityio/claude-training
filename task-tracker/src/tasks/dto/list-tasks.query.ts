@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { TASK_STATUSES, TaskStatus } from '../task.entity';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { TaskFilterQuery } from './task-filter.query';
 
 export const DEFAULT_PAGE_LIMIT = 20;
 export const MAX_PAGE_LIMIT = 100;
@@ -13,22 +13,7 @@ export const MAX_PAGE = 10_000;
 const toInt = ({ value }: { value: unknown }) =>
   typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
 
-export class ListTasksQuery {
-  @IsOptional()
-  @IsString()
-  search?: string;
-
-  @IsOptional()
-  @IsIn(TASK_STATUSES)
-  status?: TaskStatus;
-
-  // Query params arrive as strings. Only "true"/"false" become booleans; anything
-  // else is left as-is so @IsBoolean rejects it (Boolean("false") would be true).
-  @IsOptional()
-  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
-  @IsBoolean()
-  overdue?: boolean;
-
+export class ListTasksQuery extends TaskFilterQuery {
   // 1-based page number; defaults to 1 in TasksService.findAll
   @IsOptional()
   @Transform(toInt)

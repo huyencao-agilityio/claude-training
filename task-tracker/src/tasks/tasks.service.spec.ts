@@ -13,6 +13,7 @@ describe('TasksService', () => {
     take: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn(),
+    getMany: jest.fn(),
   };
   const repository = {
     findOneBy: jest.fn(),
@@ -25,6 +26,7 @@ describe('TasksService', () => {
     repository.manager.transaction.mockReset();
     Object.values(queryBuilder).forEach((fn) => fn.mockClear());
     queryBuilder.getManyAndCount.mockReset().mockResolvedValue([[], 0]);
+    queryBuilder.getMany.mockReset().mockResolvedValue([]);
     const moduleRef = await Test.createTestingModule({
       providers: [TasksService, { provide: getRepositoryToken(Task), useValue: repository }],
     }).compile();
@@ -138,6 +140,72 @@ describe('TasksService', () => {
         page: 99,
         limit: 20,
       });
+    });
+  });
+
+  describe('exportCsv', () => {
+    const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt';
+
+    it('applies the same search, status and overdue filters as findAll', async () => {
+      const filters = { search: ' 50% ', status: 'todo', overdue: true } as const;
+      await service.findAll(filters);
+      const listCalls = queryBuilder.andWhere.mock.calls.map(([sql, params]) => [sql, params]);
+      queryBuilder.andWhere.mockClear();
+
+      await service.exportCsv(filters);
+
+      expect(queryBuilder.andWhere.mock.calls).toEqual(listCalls);
+      expect(listCalls).toHaveLength(3);
+    });
+
+    it('applies the overdue=false filter', async () => {
+      await service.exportCsv({ overdue: false });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "(task.status = 'done' OR task.dueDate IS NULL OR task.dueDate >= :now)",
+        { now: expect.any(Date) },
+      );
+    });
+
+    it('fetches every matching task without paging', async () => {
+      await service.exportCsv({});
+
+      expect(queryBuilder.skip).not.toHaveBeenCalled();
+      expect(queryBuilder.take).not.toHaveBeenCalled();
+      expect(queryBuilder.getMany).toHaveBeenCalledTimes(1);
+      expect(queryBuilder.getManyAndCount).not.toHaveBeenCalled();
+    });
+
+    it('keeps the list order: newest first, ties broken by id', async () => {
+      await service.exportCsv({});
+
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith('task.createdAt', 'DESC');
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith('task.id', 'DESC');
+    });
+
+    it('returns only the header row when no task matches', async () => {
+      await expect(service.exportCsv({ search: 'nothing matches' })).resolves.toBe(
+        `\uFEFF${HEADER}\r\n`,
+      );
+    });
+
+    it('writes a row per task with the computed isOverdue', async () => {
+      const base = {
+        description: null,
+        status: 'todo',
+        createdAt: new Date('2026-01-15T08:00:00.000Z'),
+        updatedAt: new Date('2026-01-15T08:00:00.000Z'),
+      };
+      queryBuilder.getMany.mockResolvedValue([
+        { ...base, id: 'a', title: 'Late', dueDate: new Date('2000-01-01T00:00:00.000Z') },
+        { ...base, id: 'b', title: 'Undated', dueDate: null },
+      ] as Task[]);
+
+      await expect(service.exportCsv({})).resolves.toBe(
+        `\uFEFF${HEADER}\r\n` +
+          'a,Late,,todo,2000-01-01T00:00:00.000Z,true,2026-01-15T08:00:00.000Z\r\n' +
+          'b,Undated,,todo,,false,2026-01-15T08:00:00.000Z\r\n',
+      );
     });
   });
 

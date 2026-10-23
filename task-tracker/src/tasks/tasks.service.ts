@@ -3,8 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { DEFAULT_PAGE_LIMIT, ListTasksQuery } from './dto/list-tasks.query';
+import { TaskFilterQuery } from './dto/task-filter.query';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { Task } from './task.entity';
+import { toCsv } from './tasks-csv';
 
 export type TaskResponse = Task & { isOverdue: boolean };
 
@@ -22,19 +24,26 @@ export class TasksService {
     const limit = query.limit ?? DEFAULT_PAGE_LIMIT;
     // The page and the COUNT are two statements without a shared snapshot, so a write in
     // between can make total drift by a few rows; the UI copes (a page past the end jumps back).
-    const [tasks, total] = await this.listQuery(query, page, limit).getManyAndCount();
+    const [tasks, total] = await this.filteredQuery(query)
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
     return { items: tasks.map((task) => this.toResponse(task)), total, page, limit };
   }
 
-  private listQuery(query: ListTasksQuery, page: number, limit: number): SelectQueryBuilder<Task> {
+  // Every task matching the filters as one CSV file, in the list order and without paging
+  async exportCsv(query: TaskFilterQuery): Promise<string> {
+    const tasks = await this.filteredQuery(query).getMany();
+    return toCsv(tasks.map((task) => this.toResponse(task)));
+  }
+
+  private filteredQuery(query: TaskFilterQuery): SelectQueryBuilder<Task> {
     // Many tasks share a createdAt (the seed inserts 500 rows per statement), so id breaks
     // the tie and keeps the order stable: no task repeats or goes missing between pages.
     const qb = this.tasks
       .createQueryBuilder('task')
       .orderBy('task.createdAt', 'DESC')
-      .addOrderBy('task.id', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit);
+      .addOrderBy('task.id', 'DESC');
 
     const search = query.search?.trim();
     if (search) {
