@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse hook for Bash: blocks `rm -rf`, `git push --force` and `DROP TABLE/DATABASE`.
+# PreToolUse hook for Bash: blocks `rm -rf`, `git push --force`, and SQL run through a
+# database client that drops or empties data (DROP TABLE/DATABASE/SCHEMA, TRUNCATE).
 # Exit 2 blocks the command and sends stderr back to Claude.
 
 cmd=$(jq -r '.tool_input.command // ""')
@@ -23,9 +24,11 @@ if echo "$cmd" | grep -Eq 'git[[:space:]]+push' &&
   block "git push --force"
 fi
 
-# SQL that drops a table or database, any letter case
-if echo "$cmd" | grep -Eiq 'drop[[:space:]]+(table|database)'; then
-  block "DROP TABLE/DATABASE"
+# Only when a database client runs it, so `git commit -m "... DROP TABLE ..."` or a grep for
+# it still works. Any letter case.
+if echo "$cmd" | grep -Eq '(^|[^[:alnum:]_-])(psql|mysql|mariadb|sqlite3)([^[:alnum:]_-]|$)' &&
+   echo "$cmd" | grep -Eiq '(drop[[:space:]]+(table|database|schema)|truncate)([^[:alnum:]_]|$)'; then
+  block "DROP TABLE/DATABASE/SCHEMA or TRUNCATE"
 fi
 
 exit 0
