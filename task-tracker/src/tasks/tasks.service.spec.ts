@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Readable } from 'node:stream';
 import { Task } from './task.entity';
 import { TasksService } from './tasks.service';
 
@@ -13,11 +14,14 @@ describe('TasksService', () => {
     take: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn(),
+    setQueryRunner: jest.fn().mockReturnThis(),
+    stream: jest.fn(),
   };
+  const queryRunner = { release: jest.fn() };
   const repository = {
     findOneBy: jest.fn(),
     createQueryBuilder: jest.fn(() => queryBuilder),
-    manager: { transaction: jest.fn() },
+    manager: { transaction: jest.fn(), connection: { createQueryRunner: () => queryRunner } },
   };
 
   beforeEach(async () => {
@@ -25,6 +29,8 @@ describe('TasksService', () => {
     repository.manager.transaction.mockReset();
     Object.values(queryBuilder).forEach((fn) => fn.mockClear());
     queryBuilder.getManyAndCount.mockReset().mockResolvedValue([[], 0]);
+    queryBuilder.stream.mockReset().mockImplementation(async () => Readable.from([]));
+    queryRunner.release.mockClear();
     const moduleRef = await Test.createTestingModule({
       providers: [TasksService, { provide: getRepositoryToken(Task), useValue: repository }],
     }).compile();
@@ -138,6 +144,122 @@ describe('TasksService', () => {
         page: 99,
         limit: 20,
       });
+    });
+  });
+
+  describe('exportCsv', () => {
+    const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt';
+    // Raw rows as qb.stream() yields them: <alias>_<column name>, not entities
+    const raw = {
+      task_description: null,
+      task_status: 'todo',
+      task_created_at: new Date('2026-01-15T08:00:00.000Z'),
+      task_updated_at: new Date('2026-01-15T08:00:00.000Z'),
+    };
+
+    const read = async (stream: Readable) => {
+      let csv = '';
+      for await (const chunk of stream) csv += chunk;
+      return csv;
+    };
+
+    it('applies the same search, status and overdue filters as findAll', async () => {
+      const filters = { search: ' 50% ', status: 'todo', overdue: true } as const;
+      await service.findAll(filters);
+      // Each query takes its own `now`, which can land a millisecond apart
+      const listCalls = queryBuilder.andWhere.mock.calls.map(([sql, params]) => [
+        sql,
+        'now' in params ? { ...params, now: expect.any(Date) } : params,
+      ]);
+      queryBuilder.andWhere.mockClear();
+
+      await read(service.exportCsv(filters));
+
+      expect(queryBuilder.andWhere.mock.calls).toEqual(listCalls);
+      expect(listCalls).toHaveLength(3);
+    });
+
+    it('applies the overdue=false filter', async () => {
+      await read(service.exportCsv({ overdue: false }));
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "(task.status = 'done' OR task.dueDate IS NULL OR task.dueDate >= :now)",
+        { now: expect.any(Date) },
+      );
+    });
+
+    it('streams every matching task without paging', async () => {
+      await read(service.exportCsv({}));
+
+      expect(queryBuilder.skip).not.toHaveBeenCalled();
+      expect(queryBuilder.take).not.toHaveBeenCalled();
+      expect(queryBuilder.stream).toHaveBeenCalledTimes(1);
+      expect(queryBuilder.getManyAndCount).not.toHaveBeenCalled();
+    });
+
+    it('keeps the list order: newest first, ties broken by id', async () => {
+      await read(service.exportCsv({}));
+
+      // orderBy replaces the whole ORDER BY, so a second call would silently drop this order
+      expect(queryBuilder.orderBy.mock.calls).toEqual([['task.createdAt', 'DESC']]);
+      expect(queryBuilder.addOrderBy.mock.calls).toEqual([['task.id', 'DESC']]);
+    });
+
+    it('returns only the header row when no task matches', async () => {
+      await expect(read(service.exportCsv({ search: 'nothing matches' }))).resolves.toBe(
+        `\uFEFF${HEADER}\r\n`,
+      );
+    });
+
+    it('writes a row per task with the computed isOverdue', async () => {
+      queryBuilder.stream.mockResolvedValue(
+        Readable.from([
+          { ...raw, task_id: 'a', task_title: 'Late', task_due_date: new Date('2000-01-01') },
+          { ...raw, task_id: 'b', task_title: 'Undated', task_due_date: null },
+        ]),
+      );
+
+      await expect(read(service.exportCsv({}))).resolves.toBe(
+        `\uFEFF${HEADER}\r\n` +
+          'a,Late,,todo,2000-01-01T00:00:00.000Z,true,2026-01-15T08:00:00.000Z\r\n' +
+          'b,Undated,,todo,,false,2026-01-15T08:00:00.000Z\r\n',
+      );
+    });
+
+    it('runs the query on its own runner and releases it after the last row', async () => {
+      await read(service.exportCsv({}));
+
+      expect(queryBuilder.setQueryRunner).toHaveBeenCalledWith(queryRunner);
+      expect(queryRunner.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases the runner when the download is cancelled halfway', async () => {
+      // A cursor over a table too big to finish: it keeps fetching rows until destroyed
+      let n = 0;
+      const rows = new Readable({
+        objectMode: true,
+        read() {
+          n += 1;
+          this.push({ ...raw, task_id: n === 1 ? 'a' : `t${n}`, task_title: 'T', task_due_date: null });
+        },
+      });
+      queryBuilder.stream.mockResolvedValue(rows);
+      const csv = service.exportCsv({});
+
+      for await (const chunk of csv) {
+        if (String(chunk).startsWith('a,')) break; // break destroys the stream, like a closed socket
+      }
+
+      await new Promise(setImmediate);
+      expect(rows.destroyed).toBe(true);
+      expect(queryRunner.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases the runner when the query fails', async () => {
+      queryBuilder.stream.mockRejectedValue(new Error('connection refused'));
+
+      await expect(read(service.exportCsv({}))).rejects.toThrow('connection refused');
+      expect(queryRunner.release).toHaveBeenCalledTimes(1);
     });
   });
 
