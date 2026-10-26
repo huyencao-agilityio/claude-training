@@ -12,15 +12,27 @@
 
     <section class="card">
       <h2>New task</h2>
-      <form id="new-task-form">
-        <input name="title" placeholder="Title" required maxlength="200" />
-        <input name="description" placeholder="Description (optional)" />
-        <label>Due date <input name="dueDate" type="date" /></label>
-        <select name="status">
-          <option value="todo">To do</option>
-          <option value="in_progress">In progress</option>
-          <option value="done">Done</option>
-        </select>
+      <form id="new-task-form" class="stacked">
+        <label class="field">
+          <span>Title</span>
+          <input name="title" placeholder="e.g. Write release notes" required maxlength="200" />
+        </label>
+        <label class="field">
+          <span>Description <small class="muted">(optional)</small></span>
+          <textarea name="description" rows="3" placeholder="Add more details"></textarea>
+        </label>
+        <label class="field">
+          <span>Due date</span>
+          <input name="dueDate" type="date" />
+        </label>
+        <label class="field">
+          <span>Status</span>
+          <select name="status">
+            <option value="todo">To do</option>
+            <option value="in_progress">In progress</option>
+            <option value="done">Done</option>
+          </select>
+        </label>
         <button type="submit" id="save-btn">Save</button>
       </form>
       <p id="form-message" class="message"></p>

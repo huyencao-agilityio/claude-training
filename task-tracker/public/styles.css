@@ -4,7 +4,15 @@ body { margin: 0; font-family: system-ui, sans-serif; background: #f5f6f8; color
 main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
 .card { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
 form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-input, select, button { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+input, select, textarea, button { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-color: #1d4ed8; }
+/* One field per row: label on its own line, then the input */
+form.stacked { flex-direction: column; align-items: stretch; gap: 14px; max-width: 480px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-weight: 500; }
+.field small { font-weight: 400; }
+.field input, .field select, .field textarea { width: 100%; font-weight: 400; }
+.field textarea { resize: vertical; }
+form.stacked button { align-self: flex-start; padding: 8px 20px; }
 button { background: #1d4ed8; color: #fff; border: none; cursor: pointer; }
 button:disabled { opacity: .6; cursor: default; }
 table { width: 100%; border-collapse: collapse; margin-top: 8px; }
