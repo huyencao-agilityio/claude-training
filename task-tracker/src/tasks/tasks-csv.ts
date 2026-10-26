@@ -15,11 +15,13 @@ const BOM = '\uFEFF';
 // RFC 4180 record separator
 const EOL = '\r\n';
 
-// Spreadsheet apps run a cell starting with one of these as a formula (CSV injection)
-const FORMULA_PREFIX = /^[=+\-@]/;
+// Spreadsheet apps run a cell starting with one of these as a formula (CSV injection);
+// some skip a leading tab or CR and evaluate the rest (OWASP CSV injection list)
+const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 const NEEDS_QUOTES = /[",\r\n]/;
 
 export function escapeCsvCell(value: string): string {
+  // Prefix before quoting so the apostrophe lands inside the quotes
   const safe = FORMULA_PREFIX.test(value) ? `'${value}` : value;
   return NEEDS_QUOTES.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }

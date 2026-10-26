@@ -86,12 +86,16 @@ describe('tasks CSV', () => {
       expect(escapeCsvCell(value)).toBe(expected);
     });
 
-    it.each(['=', '+', '-', '@'])(
+    it.each(['=', '+', '-', '@', '\t'])(
       'prefixes a value starting with %j with an apostrophe',
       (char) => {
         expect(escapeCsvCell(`${char}SUM(A1:A2)`)).toBe(`'${char}SUM(A1:A2)`);
       },
     );
+
+    it('prefixes a value starting with a carriage return inside the quotes', () => {
+      expect(escapeCsvCell('\r=1+1')).toBe(`"'\r=1+1"`);
+    });
 
     it('prefixes before quoting when a formula also needs quotes', () => {
       expect(escapeCsvCell('=HYPERLINK("http://x.test","click")')).toBe(
