@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "autoVerify": true,
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:preview"],
+      "port": 3000,
+      "cwd": "./task-tracker",
+      "autoPort": true
+    }
+  ]
+}
