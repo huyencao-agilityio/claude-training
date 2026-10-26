@@ -40,8 +40,15 @@ function toRow(task: TaskResponse): string[] {
   ];
 }
 
+const toLine = (cells: string[]) => cells.map(escapeCsvCell).join(',') + EOL;
+
+// Start of every file: BOM, then the header row
+export const CSV_HEADER = BOM + toLine([...CSV_COLUMNS]);
+
+// One record, so a streamed export can write rows as they arrive
+export const toCsvLine = (task: TaskResponse) => toLine(toRow(task));
+
 // Builds the whole file: BOM, header row, then one row per task (header only when empty)
 export function toCsv(tasks: TaskResponse[]): string {
-  const rows = [[...CSV_COLUMNS], ...tasks.map(toRow)];
-  return BOM + rows.map((row) => row.map(escapeCsvCell).join(',') + EOL).join('');
+  return CSV_HEADER + tasks.map(toCsvLine).join('');
 }

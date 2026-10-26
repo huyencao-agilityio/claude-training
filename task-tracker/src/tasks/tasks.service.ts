@@ -1,16 +1,28 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Readable } from 'node:stream';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { DEFAULT_PAGE_LIMIT, ListTasksQuery } from './dto/list-tasks.query';
 import { TaskFilterQuery } from './dto/task-filter.query';
 import { UpdateTaskDto } from './dto/update-task.dto';
-import { Task } from './task.entity';
-import { toCsv } from './tasks-csv';
+import { Task, TaskStatus } from './task.entity';
+import { CSV_HEADER, toCsvLine } from './tasks-csv';
 
 export type TaskResponse = Task & { isOverdue: boolean };
 
 export type TaskPage = { items: TaskResponse[]; total: number; page: number; limit: number };
+
+// A row from qb.stream(): raw, not an entity, with each column named <alias>_<column name>
+type RawTaskRow = {
+  task_id: string;
+  task_title: string;
+  task_description: string | null;
+  task_status: TaskStatus;
+  task_due_date: Date | null;
+  task_created_at: Date;
+  task_updated_at: Date;
+};
 
 // Escape LIKE special characters so the search term is matched literally.
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
@@ -31,10 +43,38 @@ export class TasksService {
     return { items: tasks.map((task) => this.toResponse(task)), total, page, limit };
   }
 
-  // Every task matching the filters as one CSV file, in the list order and without paging
-  async exportCsv(query: TaskFilterQuery): Promise<string> {
-    const tasks = await this.filteredQuery(query).getMany();
-    return toCsv(tasks.map((task) => this.toResponse(task)));
+  // Every task matching the filters as one CSV file, in the list order and without paging.
+  // Rows are streamed from the database and written as they arrive, so memory stays flat
+  // however many tasks match.
+  exportCsv(query: TaskFilterQuery): Readable {
+    return Readable.from(this.csvChunks(query));
+  }
+
+  private async *csvChunks(query: TaskFilterQuery): AsyncGenerator<string> {
+    // TypeORM only frees a streaming connection when the stream ends or fails, not when the
+    // download is cancelled and the stream destroyed, so we own the runner and release it here
+    const runner = this.tasks.manager.connection.createQueryRunner();
+    try {
+      const rows = await this.filteredQuery(query).setQueryRunner(runner).stream();
+      yield CSV_HEADER;
+      for await (const raw of rows as AsyncIterable<RawTaskRow>) {
+        yield toCsvLine(this.toResponse(this.fromRaw(raw)));
+      }
+    } finally {
+      await runner.release();
+    }
+  }
+
+  private fromRaw(raw: RawTaskRow): Task {
+    return {
+      id: raw.task_id,
+      title: raw.task_title,
+      description: raw.task_description,
+      status: raw.task_status,
+      dueDate: raw.task_due_date,
+      createdAt: raw.task_created_at,
+      updatedAt: raw.task_updated_at,
+    };
   }
 
   private filteredQuery(query: TaskFilterQuery): SelectQueryBuilder<Task> {

@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Readable } from 'node:stream';
 import { Task } from './task.entity';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
@@ -16,9 +17,14 @@ describe('GET /tasks/export', () => {
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
-    getMany: jest.fn(),
+    setQueryRunner: jest.fn().mockReturnThis(),
+    stream: jest.fn(),
   };
-  const repository = { createQueryBuilder: jest.fn(() => queryBuilder) };
+  const queryRunner = { release: jest.fn() };
+  const repository = {
+    createQueryBuilder: jest.fn(() => queryBuilder),
+    manager: { connection: { createQueryRunner: () => queryRunner } },
+  };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -36,10 +42,12 @@ describe('GET /tasks/export', () => {
 
   beforeEach(() => {
     Object.values(queryBuilder).forEach((fn) => fn.mockClear());
-    queryBuilder.getMany.mockReset().mockResolvedValue([]);
+    queryBuilder.stream.mockReset().mockImplementation(async () => Readable.from([]));
+    queryRunner.release.mockClear();
   });
 
-  const get = (query = '') => fetch(`${baseUrl}/tasks/export${query}`);
+  const get = (query = '', signal?: AbortSignal) =>
+    fetch(`${baseUrl}/tasks/export${query}`, { signal });
 
   it('answers with text/csv in UTF-8', async () => {
     const res = await get();
@@ -68,17 +76,19 @@ describe('GET /tasks/export', () => {
   });
 
   it('writes the matching tasks as rows', async () => {
-    queryBuilder.getMany.mockResolvedValue([
-      {
-        id: '00000000-0000-4000-8000-000000000001',
-        title: '=cmd, "x"',
-        description: 'Tiếng Việt',
-        status: 'done',
-        dueDate: null,
-        createdAt: new Date('2026-01-15T08:00:00.000Z'),
-        updatedAt: new Date('2026-01-15T08:00:00.000Z'),
-      },
-    ]);
+    queryBuilder.stream.mockResolvedValue(
+      Readable.from([
+        {
+          task_id: '00000000-0000-4000-8000-000000000001',
+          task_title: '=cmd, "x"',
+          task_description: 'Tiếng Việt',
+          task_status: 'done',
+          task_due_date: null,
+          task_created_at: new Date('2026-01-15T08:00:00.000Z'),
+          task_updated_at: new Date('2026-01-15T08:00:00.000Z'),
+        },
+      ]),
+    );
 
     const body = Buffer.from(await (await get()).arrayBuffer()).toString('utf8');
 
@@ -116,6 +126,43 @@ describe('GET /tasks/export', () => {
     const res = await get(query);
 
     expect(res.status).toBe(400);
-    expect(queryBuilder.getMany).not.toHaveBeenCalled();
+    expect(queryBuilder.stream).not.toHaveBeenCalled();
+  });
+
+  it('answers 500 without the database error message when the query fails', async () => {
+    queryBuilder.stream.mockRejectedValue(new Error('password authentication failed'));
+
+    const res = await get();
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe('');
+  });
+
+  it('stops the query and frees the connection when the client cancels the download', async () => {
+    // A cursor over a table too big to finish: it keeps fetching rows until destroyed
+    const rows = new Readable({
+      objectMode: true,
+      read() {
+        this.push({
+          task_id: 'a',
+          task_title: 'T',
+          task_description: null,
+          task_status: 'todo',
+          task_due_date: null,
+          task_created_at: new Date(0),
+          task_updated_at: new Date(0),
+        });
+      },
+    });
+    queryBuilder.stream.mockResolvedValue(rows);
+    const abort = new AbortController();
+
+    const res = await get('', abort.signal);
+    await res.body!.getReader().read(); // the download has started
+    abort.abort();
+
+    await new Promise((resolve) => rows.once('close', resolve));
+    await new Promise(setImmediate);
+    expect(queryRunner.release).toHaveBeenCalledTimes(1);
   });
 });
