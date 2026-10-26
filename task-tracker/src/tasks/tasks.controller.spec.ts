@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Readable } from 'node:stream';
@@ -131,11 +131,18 @@ describe('GET /tasks/export', () => {
 
   it('answers 500 without the database error message when the query fails', async () => {
     queryBuilder.stream.mockRejectedValue(new Error('password authentication failed'));
+    // Expected error: check it is logged, without printing the stack in the test output
+    const logError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
 
     const res = await get();
 
     expect(res.status).toBe(500);
     expect(await res.text()).toBe('');
+    expect(logError).toHaveBeenCalledWith(
+      'CSV export failed: password authentication failed',
+      expect.any(String),
+    );
+    logError.mockRestore();
   });
 
   it('stops the query and frees the connection when the client cancels the download', async () => {

@@ -200,8 +200,9 @@ describe('TasksService', () => {
     it('keeps the list order: newest first, ties broken by id', async () => {
       await read(service.exportCsv({}));
 
-      expect(queryBuilder.orderBy).toHaveBeenCalledWith('task.createdAt', 'DESC');
-      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith('task.id', 'DESC');
+      // orderBy replaces the whole ORDER BY, so a second call would silently drop this order
+      expect(queryBuilder.orderBy.mock.calls).toEqual([['task.createdAt', 'DESC']]);
+      expect(queryBuilder.addOrderBy.mock.calls).toEqual([['task.id', 'DESC']]);
     });
 
     it('returns only the header row when no task matches', async () => {
