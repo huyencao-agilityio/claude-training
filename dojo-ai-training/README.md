@@ -30,3 +30,6 @@ dojo-ai-training/
 | [day-6/artifact-example.md](exercises/day-6/artifact-example.md) | Prompted Claude to build and publish a company trip registration form as a shared artifact; the prompt and a screenshot of the UI |
 | [day-6/effort-comparison.md](exercises/day-6/effort-comparison.md) | Ran one null-handling bug at each `/effort` level and with `ultrathink`, then compared fix quality, thinking tokens and cost; plan-tier notes |
 | [day-10/code-review-comparison.md](exercises/day-10/code-review-comparison.md) | Ran `/code-review` and `/code-review ultra` on the same CSV-export diff, then compared shared findings, findings only one run caught, and their signal |
+| [day-11/intent.md](exercises/day-11/intent.md) | Drafted an `intent.md` for requiring email + password login before viewing the task list (problem, outcome, constraints, open questions) |
+| [day-11/spec.md](exercises/day-11/spec.md) | Requirements and design spec for the login intent on [task-tracker](../task-tracker): data model, API, session, UI, tests, and areas of concern |
+| [day-11/plan.md](exercises/day-11/plan.md) | Implementation plan for the login spec: files to change, order of steps, tests, risks, and alternatives not chosen |
