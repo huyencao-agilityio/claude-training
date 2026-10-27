@@ -1,6 +1,6 @@
 # The AI-Native SDLC Playbook: Notes
 
-> Course: [AI-Native SDLC Playbook](https://academy.claude.com/courses/ai-native-sdlc-playbook/introduction) · Lessons: Introduction, Capture intent, Requirements and design, Plan mode, CLAUDE.md, Skills as institutional knowledge, Parallel sessions and subagents, Give Claude a feedback loop, Continuous evals in CI, AI in the PR review loop · Last updated: 2026-10-26
+> Course: [AI-Native SDLC Playbook](https://academy.claude.com/courses/ai-native-sdlc-playbook/introduction) · Lessons: Introduction, Capture intent, Requirements and design, Plan mode, CLAUDE.md, Skills as institutional knowledge, Parallel sessions and subagents, Give Claude a feedback loop, Continuous evals in CI, AI in the PR review loop, Hooks as approval gates, CI/CD integration and deployment, Closing the loop on metrics · Last updated: 2026-10-27
 
 ## Introduction
 
@@ -337,3 +337,99 @@ Example: a PR adds a claim-status panel. Claude reports **Important**: fetches o
 - Reviewing against `plan.md` / `spec.md` catches "not what was planned", which a diff-only review misses.
 - Tune monthly: tech lead rates findings and caps the number of Nits.
 - Measure: time to first review (should drop to minutes), share of comments resolved without a human editing the branch, defects caught before vs. after production.
+
+---
+
+## Hooks as approval gates (Stage 5: Deploy)
+
+**Purpose:** a hook is a small script that runs right before Claude takes an action. Used as a gate, it turns "you need approval first" from a rule in a document into a check enforced on every action and every person.
+
+**Flow:**
+
+```
+1. List the approvals your process really requires
+   (change ticket, release sign-off, protected files)
+        ↓
+2. Write each one as a hook script (a platform engineer does this)
+   Claude is about to act → script decides: allow / ask / deny
+        ↓
+3. Put the hook where it cannot be bypassed:
+   team rules      → .claude/settings.json (in Git)
+   must-not-skip   → managed settings (admins own them, engineers can't turn them off)
+        ↓
+4. When a hook blocks, it says why and how to get approval
+```
+
+**The 3 decisions:**
+
+| Decision | What happens | Who reads the reason |
+|---|---|---|
+| allow | action runs | none |
+| ask | pauses, a person confirms | the person |
+| deny | action is blocked | Claude, which passes the approval route on |
+
+**Example (release gate):** a `PreToolUse` hook on the `release` tool of each environment's deploy server.
+
+- Dev: allow.
+- Staging: allow when run from `main` (the approved merge is the approval); otherwise ask.
+- Production: needs a change ticket `CHG-<number>` approved for that exact version, checked against the change system. No ticket → deny, and Claude is told to open one and wait for the release manager.
+- Unknown tool: deny by default.
+
+---
+
+## CI/CD integration and deployment (Stage 5: Deploy)
+
+**Purpose:** a CI/CD pipeline is the automatic chain that tests, builds and releases code. Until now it only ran fixed scripts, and anything needing judgment (why did the build fail? what changed?) waited for a human. This lesson lets Claude do that judgment work inside the pipeline, and optionally also release and roll back, with one rule: **Claude may work up to the production gate but cannot pass it.**
+
+**Flow:** a ladder of trust. Start at the first rung and climb only when the rung below is safe and you actually need more. Most teams can stop after rung 2.
+
+```
+Rung 1  Read-only           Claude reads a failed build log and writes
+                            "flaky or real? likely cause?" into the PR thread
+          ↓ (only if you want Claude to change things)
+Rung 2  Small fixes         Claude fixes lint, updates docs, answers @claude review comments
+                            → always as a PR; branch protection blocks any push to main
+          ↓ (only if you want Claude to deploy)
+Rung 3  Deploy via tools    release / status / rollback exposed as MCP tools,
+                            different permissions per environment (dev / staging / prod)
+```
+
+**Always apply (safety, from rung 2 onward):**
+
+- Run Claude jobs in a **sandbox**: container, network limits, short-lived tokens, **no production credentials**.
+- Practise **rollback** in staging until it is one command. It is the safety net for everything above.
+
+**Rung 3 in short:** dev, Claude releases freely; staging, a hook asks or allows after an approved merge; production, Claude only prepares and a release manager approves through the hook (see the Hooks section).
+
+---
+
+## Closing the loop on metrics (Stage 6: Maintain)
+
+**Purpose:** until now, every stage needed a person to start it. Here, a trigger (a metric going out of range, a ticket, a chat message, a schedule) starts Claude on its own. Claude diagnoses the problem and writes it up as `intent.md`, so the work re-enters the pipeline at Stage 1. People triage the findings instead of discovering the problems.
+
+**Flow:**
+
+```
+1. Pick one metric with a stable normal level
+   (e.g. CI test failure rate, 5xx rate after deploy)
+        ↓
+2. A plain script (no AI) compares each reading with the last 30 days:
+   mean ± σ (σ = standard deviation = how much the metric normally wobbles)
+        ↓
+3. The size of the breach decides how much Claude may do (set in versioned config):
+   1σ  → only log it (chance alone crosses this several times a day)
+   2σ  → Claude diagnoses, read-only
+   3σ  → Claude may act, but only via a PR or a pre-approved runbook (e.g. rollback)
+        ↓
+4. Claude writes its diagnosis as intent.md
+   (what happened, evidence, proposed outcome, open questions)
+        ↓
+5. The service owner triages: fix now / schedule / dismiss
+   (dismissals help tune the bands)
+        ↓
+6. After the fix ships, add an eval for this incident so it cannot come back
+        ↓
+   intent.md → Stage 1 again
+```
+
+**Example:** a release sets a cache from 60 s to 0, so every page view hits a legacy system limited to 50 requests/s. The 5xx rate jumps to 1.9% (normal 0.2%), which is a 3σ breach. The pre-approved `rollback-deploy` runbook runs and the old version is live again in 4 minutes. Claude then writes an `intent.md` (cause, the release responsible, action taken, open question: do customers really need live status?), and an eval is added to check the panel still caches.
