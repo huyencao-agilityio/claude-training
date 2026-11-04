@@ -33,3 +33,4 @@ dojo-ai-training/
 | [day-11/intent.md](exercises/day-11/intent.md) | Drafted an `intent.md` for requiring email + password login before viewing the task list (problem, outcome, constraints, open questions) |
 | [day-11/spec.md](exercises/day-11/spec.md) | Requirements and design spec for the login intent on [task-tracker](../task-tracker): data model, API, session, UI, tests, and areas of concern |
 | [day-11/plan.md](exercises/day-11/plan.md) | Implementation plan for the login spec: files to change, order of steps, tests, risks, and alternatives not chosen |
+| [day-12/ticket-pack.md](exercises/day-12/ticket-pack.md) | Capstone intake: client brief, open questions, assumptions, one ticket per feature (login, urgent tasks first, assign a task) with UI changes, Given/When/Then ACs and a draft test matrix |
