@@ -6,6 +6,12 @@ const formMessage = document.getElementById('form-message');
 const prevPage = document.getElementById('prev-page');
 const nextPage = document.getElementById('next-page');
 const pageInfo = document.getElementById('page-info');
+const loginScreen = document.getElementById('login-screen');
+const loginForm = document.getElementById('login-form');
+const loginButton = document.getElementById('login-btn');
+const loginMessage = document.getElementById('login-message');
+const appSection = document.getElementById('app');
+const currentUser = document.getElementById('current-user');
 
 const STATUS_LABELS = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
 
@@ -47,14 +53,26 @@ function updatePager() {
   nextPage.disabled = currentPage >= totalPages;
 }
 
-// Resolves to { body } on success, or { error } with a message to show
+// Every API call except the login goes through here. A 401 means the login is missing, invalid
+// or expired: the login screen is shown and null is returned, so the caller stops (AC1.6, AC1.7).
+async function apiFetch(url, options) {
+  const res = await fetch(url, options);
+  if (res.status !== 401) return res;
+
+  const body = await res.json().catch(() => ({}));
+  showLogin(body.error === 'SessionExpired' ? body.message : '');
+  return null;
+}
+
+// Resolves to { body } on success, { error } with a message to show, or { unauthorized } after a 401
 async function fetchTasks(params) {
   let res;
   try {
-    res = await fetch(`/tasks?${params}`);
+    res = await apiFetch(`/tasks?${params}`);
   } catch {
     return { error: 'Could not reach the server' };
   }
+  if (!res) return { unauthorized: true };
 
   let body;
   try {
@@ -81,8 +99,8 @@ async function loadTasks(page, filters = appliedFilters) {
   const params = new URLSearchParams(filters);
   params.set('page', page);
 
-  const { body, error } = await fetchTasks(params);
-  if (request !== latestRequest) return;
+  const { body, error, unauthorized } = await fetchTasks(params);
+  if (request !== latestRequest || unauthorized) return;
 
   if (error) {
     // Keep the table, page and filters that were already shown
@@ -131,11 +149,13 @@ newTaskForm.addEventListener('submit', async (event) => {
   if (data.get('description')) body.description = data.get('description');
   if (data.get('dueDate')) body.dueDate = toIsoDate(data.get('dueDate'));
 
-  const res = await fetch('/tasks', {
+  const res = await apiFetch('/tasks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  // Login missing or expired: the login screen is shown and nothing was saved
+  if (!res) return;
 
   if (res.ok) {
     formMessage.textContent = 'Task saved';
@@ -159,4 +179,87 @@ prevPage.addEventListener('click', () => loadTasks(currentPage - 1));
 
 nextPage.addEventListener('click', () => loadTasks(currentPage + 1));
 
-loadTasks(1);
+// Hides the tasks and shows the login screen with an optional message (the expired one, AC1.7).
+// The list is reset, so after logging in again the user gets page 1 with no filters.
+function showLogin(message) {
+  latestRequest++; // drop any list response still on its way
+  appliedFilters = new URLSearchParams();
+  currentPage = 1;
+  totalPages = 1;
+  filterForm.reset();
+  newTaskForm.reset();
+  formMessage.textContent = '';
+  rows.innerHTML = '';
+  count.textContent = '';
+  pageInfo.textContent = '';
+  currentUser.textContent = '';
+  appSection.hidden = true;
+  loginScreen.hidden = false;
+  loginMessage.textContent = message;
+}
+
+// Shows the task list for the logged-in user, with "Alice (user)" in the header (AC1.3, AC1.13)
+function showApp(user) {
+  currentUser.textContent = `${user.name} (${user.role})`;
+  loginScreen.hidden = true;
+  appSection.hidden = false;
+  loadTasks(1, new URLSearchParams());
+}
+
+// AC1.5: an empty field gets a red border and "Required"
+function markRequired(input, isEmpty) {
+  input.classList.toggle('invalid', isEmpty);
+  input.closest('.field').querySelector('.field-error').hidden = !isEmpty;
+}
+
+for (const input of [loginForm.elements.email, loginForm.elements.password]) {
+  input.addEventListener('input', () => markRequired(input, false));
+}
+
+loginForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const { email, password } = loginForm.elements;
+  markRequired(email, email.value === '');
+  markRequired(password, password.value === '');
+  if (email.value === '' || password.value === '') return;
+
+  // Disabled while sending, so one click sends one request
+  loginButton.disabled = true;
+  loginMessage.textContent = '';
+  try {
+    // Not apiFetch: here a 401 means a wrong email or password, not a missing login.
+    // The email is sent exactly as typed (Q-28).
+    const res = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.value, password: password.value }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      loginForm.reset();
+      showApp(body);
+    } else {
+      // 401: "Email or password is incorrect." (AC1.4)
+      loginMessage.textContent = body.message ? [].concat(body.message).join(', ') : `HTTP ${res.status}`;
+    }
+  } catch {
+    loginMessage.textContent = 'Could not reach the server';
+  } finally {
+    loginButton.disabled = false;
+  }
+});
+
+// On open: a login from the last 24 hours goes straight to the list (AC1.18); otherwise the
+// login screen, with the expired message if the login has run out (AC1.6, AC1.7)
+async function start() {
+  try {
+    const res = await apiFetch('/auth/me');
+    if (!res) return;
+    if (res.ok) return showApp(await res.json());
+    showLogin(`Could not check your login (HTTP ${res.status})`);
+  } catch {
+    showLogin('Could not reach the server');
+  }
+}
+
+start();

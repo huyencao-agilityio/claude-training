@@ -1,5 +1,6 @@
 import { DataSourceOptions } from 'typeorm';
 import { Task } from './tasks/task.entity';
+import { User } from './users/user.entity';
 
 export function dataSourceOptions(): DataSourceOptions {
   return {
@@ -9,7 +10,7 @@ export function dataSourceOptions(): DataSourceOptions {
     username: process.env.DB_USER ?? 'postgres',
     password: process.env.DB_PASSWORD ?? 'postgres',
     database: process.env.DB_NAME ?? 'task_tracker',
-    entities: [Task],
+    entities: [Task, User],
     // Dev-only: keeps the schema in sync with the entities without migrations.
     synchronize: true,
   };

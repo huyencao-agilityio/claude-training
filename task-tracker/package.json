@@ -7,6 +7,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "seed": "ts-node src/seed.ts",
+    "seed:users": "ts-node src/seed-users.ts",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "test": "jest",
