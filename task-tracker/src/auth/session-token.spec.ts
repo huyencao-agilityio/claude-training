@@ -1,4 +1,4 @@
-import { sessionTtlMs, signSession, verifySession } from './session-token';
+import { assertSessionSecretConfigured, sessionTtlMs, signSession, verifySession } from './session-token';
 
 describe('session token', () => {
   const LOGIN_AT = Date.UTC(2026, 10, 5, 8, 0, 0);
@@ -60,6 +60,36 @@ describe('session token', () => {
   it('does not report an expired token as expired when its signature is wrong', () => {
     const [body] = signSession('user-1', LOGIN_AT).split('.');
     expect(verifySession(`${body}.bad`, LOGIN_AT + 48 * HOUR)).toEqual({ status: 'invalid' });
+  });
+
+  describe('assertSessionSecretConfigured', () => {
+    const LONG_SECRET = 's'.repeat(32);
+
+    it.each([
+      ['not set', undefined],
+      ['too short', 'secret'],
+      ['31 characters', 's'.repeat(31)],
+    ])('refuses to start in production when SESSION_SECRET is %s', (_, secret) => {
+      process.env.NODE_ENV = 'production';
+      if (secret === undefined) delete process.env.SESSION_SECRET;
+      else process.env.SESSION_SECRET = secret;
+      expect(() => assertSessionSecretConfigured()).toThrow(
+        'SESSION_SECRET must be set to at least 32 characters when NODE_ENV=production',
+      );
+    });
+
+    it('starts in production with a secret of 32 characters', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.SESSION_SECRET = LONG_SECRET;
+      expect(() => assertSessionSecretConfigured()).not.toThrow();
+    });
+
+    it.each(['development', 'test', undefined])('allows the dev-only secret when NODE_ENV is %s', (env) => {
+      if (env === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = env;
+      delete process.env.SESSION_SECRET;
+      expect(() => assertSessionSecretConfigured()).not.toThrow();
+    });
   });
 
   it('warns once when SESSION_SECRET is not set, and not when it is', () => {

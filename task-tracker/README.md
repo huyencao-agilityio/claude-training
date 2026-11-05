@@ -25,7 +25,7 @@ Open http://localhost:3000 for the web UI and log in with a sample account: `adm
 - `npm run seed:users [path]` loads a users file (default `data/users.json`): a JSON array of `{ email, name, role, password }`. It replaces all users: users in the file are added or updated by email, users missing from the file are marked removed and can't log in. Tasks are never changed.
 - The whole file is checked first; any bad entry stops the script with an error naming it, and the users stay as they were. Rules: email required, lowercase and unique; name required; role `admin` or `user`; password 8 to 12 characters with at least 1 uppercase letter, 1 lowercase letter and 1 digit. Passwords are stored hashed (scrypt).
 - A login lasts 24 hours from the moment of login and is kept in an HttpOnly `session` cookie, so it survives closing the browser.
-- Environment variables (optional): `SESSION_SECRET` signs the session cookie (a dev-only default is used when unset; always set it outside local dev). `SESSION_TTL_SECONDS` sets how long a login lasts (default `86400`); set it low, e.g. `60`, to test expiry.
+- Environment variables (optional): `SESSION_SECRET` signs the session cookie. Locally a dev-only default is used when it is unset; with `NODE_ENV=production` the app refuses to start unless it is set to at least 32 characters. `SESSION_TTL_SECONDS` sets how long a login lasts (default `86400`); set it low, e.g. `60`, to test expiry.
 
 ## Tests
 

@@ -7,6 +7,20 @@ const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
 // Dev-only fallback, like the DB defaults in data-source.ts; set SESSION_SECRET anywhere else
 const DEV_SESSION_SECRET = 'dev-only-session-secret';
 
+const MIN_PRODUCTION_SECRET_LENGTH = 32;
+
+// Fails closed: in production the app refuses to start without a real secret, since anyone with the
+// repo knows the dev-only one and could sign a cookie for any user. Called when AuthModule starts.
+export function assertSessionSecretConfigured(): void {
+  if (process.env.NODE_ENV !== 'production') return;
+  const secret = process.env.SESSION_SECRET ?? '';
+  if (secret.length < MIN_PRODUCTION_SECRET_LENGTH) {
+    throw new Error(
+      `SESSION_SECRET must be set to at least ${MIN_PRODUCTION_SECRET_LENGTH} characters when NODE_ENV=production`,
+    );
+  }
+}
+
 const logger = new Logger('SessionToken');
 let warnedAboutDevSecret = false;
 
