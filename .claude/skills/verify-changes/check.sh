@@ -17,8 +17,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Always run from the task-tracker root (this file lives in .claude/skills/verify-changes/).
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+# Always run from the app folder of the current checkout (main repo or a worktree).
+ROOT="$(git rev-parse --show-toplevel)/task-tracker"
 cd "$ROOT" || exit 2
 
 FAILED=0

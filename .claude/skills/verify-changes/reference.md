@@ -27,7 +27,7 @@ Limits of the grep-based checks:
 
 ## Manual review rules
 
-Check these by reading the diff (`git diff $(git merge-base main HEAD) -- .`). They match what `.claude/agents/code-reviewer.md` looks for.
+Check these by reading the diff (`git diff $(git merge-base main HEAD) -- .`, from `task-tracker/`). They match what the `code-reviewer` agent (`.claude/agents/code-reviewer.md` at the repo root) looks for.
 
 **Tests prove the change**
 - Bug fix: there is a test that fails on the old code. Verify with the reverse-patch step in `SKILL.md` (step 3) and report both runs.
