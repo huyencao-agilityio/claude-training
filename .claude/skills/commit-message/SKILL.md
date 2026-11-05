@@ -29,7 +29,9 @@ A day's work usually mixes code, course notes and exercises. Don't make one "dai
 | App tooling / deps | `task-tracker/package*.json`, `tsconfig*.json`, `docker-compose.yml` | `chore(deps): ...` |
 | Course notes | `dojo-ai-training/docs/` | `docs(claude-code-101): ...` (scope = the notes file / topic) |
 | Exercises | `dojo-ai-training/exercises/day-N/` | `docs(exercises): add day 4 ...` (the day goes in the summary, not the scope) |
-| Claude setup | `**/CLAUDE.md`, `**/.claude/` (skills, agents, settings) | `chore(claude): ...` |
+| Tickets | `docs/tickets/` | `docs(tickets): add login ticket` |
+| Ticket analysis and plan | `docs/analyze/`, `docs/plans/` | No commit of their own: they go in the commit of the code they describe |
+| Claude setup | `**/CLAUDE.md`, `.claude/` (skills, agents, rules, settings) | `chore(claude): ...` |
 
 Show the proposed split (files → message) and let the user adjust it before committing. A code change and the test for it belong in the same commit. A dependency added for that code (e.g. a new package in `package.json` + lock file) also belongs in it.
 
