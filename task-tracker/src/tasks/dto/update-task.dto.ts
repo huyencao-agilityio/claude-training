@@ -10,15 +10,17 @@ export class UpdateTaskDto {
   @MaxLength(200)
   title?: string;
 
+  // null clears the description (AC4.6); @IsOptional() lets it through
   @IsOptional()
   @IsString()
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsIn(TASK_STATUSES)
   status?: TaskStatus;
 
+  // null clears the due date (AC4.6); "" is still rejected
   @IsOptional()
   @IsDateString()
-  dueDate?: string;
+  dueDate?: string | null;
 }

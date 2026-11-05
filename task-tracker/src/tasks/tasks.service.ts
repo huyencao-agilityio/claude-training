@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Readable } from 'node:stream';
 import { Repository, SelectQueryBuilder } from 'typeorm';
+import { User } from '../users/user.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { DEFAULT_PAGE_LIMIT, ListTasksQuery } from './dto/list-tasks.query';
 import { TaskFilterQuery } from './dto/task-filter.query';
@@ -26,6 +27,9 @@ type RawTaskRow = {
 
 // Escape LIKE special characters so the search term is matched literally.
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
+
+// Only an admin may change these fields (AC4.2). T2 and T3 add fields a user may change too.
+const ADMIN_ONLY_FIELDS = ['title', 'description', 'dueDate', 'status'] as const;
 
 @Injectable()
 export class TasksService {
@@ -124,14 +128,19 @@ export class TasksService {
     return this.toResponse(await this.tasks.save(task));
   }
 
-  async update(id: string, dto: UpdateTaskDto): Promise<TaskResponse> {
+  async update(id: string, dto: UpdateTaskDto, user: Pick<User, 'role'>): Promise<TaskResponse> {
+    // Checked before the task is read, so a user learns nothing about it (null counts as sent)
+    if (user.role !== 'admin' && ADMIN_ONLY_FIELDS.some((field) => dto[field] !== undefined)) {
+      throw new ForbiddenException();
+    }
     const task = await this.tasks.findOneBy({ id });
     if (!task) {
       throw new NotFoundException(`Task ${id} not found`);
     }
     Object.assign(task, {
       ...dto,
-      dueDate: dto.dueDate !== undefined ? new Date(dto.dueDate) : task.dueDate,
+      // null clears the due date (AC4.6); new Date(null) would save 1970-01-01
+      dueDate: dto.dueDate === undefined ? task.dueDate : dto.dueDate === null ? null : new Date(dto.dueDate),
     });
     return this.toResponse(await this.tasks.save(task));
   }

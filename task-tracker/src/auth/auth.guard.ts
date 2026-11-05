@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   SetMetadata,
   UnauthorizedException,
@@ -8,7 +9,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { isUUID } from 'class-validator';
 import type { Request } from 'express';
-import { User } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { SESSION_COOKIE, verifySession } from './session-token';
 
@@ -17,6 +18,10 @@ export const SESSION_EXPIRED_MESSAGE = 'Your login has expired. Please log in ag
 const IS_PUBLIC = 'isPublic';
 // Skips the login check; only POST /auth/login uses it
 export const Public = () => SetMetadata(IS_PUBLIC, true);
+
+const ROLES = 'roles';
+// Only these roles may call the endpoint; anyone else logged in gets 403 before the body is validated (AC4.2)
+export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES, roles);
 
 export type AuthenticatedRequest = Request & { user: User };
 
@@ -66,6 +71,14 @@ export class AuthGuard implements CanActivate {
     if (!user) throw new UnauthorizedException();
 
     req.user = user;
+
+    // The role is read from the users table on every request, so a role change applies at once (AC4.8)
+    const roles = this.reflector.getAllAndOverride<UserRole[] | undefined>(ROLES, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (roles && !roles.includes(user.role)) throw new ForbiddenException();
+
     return true;
   }
 }

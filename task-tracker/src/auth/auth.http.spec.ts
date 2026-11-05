@@ -22,6 +22,7 @@ describe('login over HTTP', () => {
   let app: INestApplication;
   let baseUrl: string;
   let alice: User;
+  let admin: User;
 
   const queryBuilder = {
     orderBy: jest.fn().mockReturnThis(),
@@ -71,6 +72,14 @@ describe('login over HTTP', () => {
       passwordHash: await hashPassword('Passw0rd'),
       removedAt: null,
     } as User;
+    admin = {
+      id: '5b2d8c1e-3f4a-4b6c-8d7e-9f0a1b2c3d4e',
+      email: 'admin@example.com',
+      name: 'Admin',
+      role: 'admin',
+      passwordHash: alice.passwordHash,
+      removedAt: null,
+    } as User;
 
     const moduleRef = await Test.createTestingModule({
       controllers: [TasksController, AuthController],
@@ -95,8 +104,9 @@ describe('login over HTTP', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Active users only, like UsersService's IsNull() filter on removed_at
-    userRepository.findOneBy.mockImplementation(async (where: Partial<User>) =>
-      (where.id ?? alice.id) === alice.id && (where.email ?? alice.email) === alice.email ? alice : null,
+    userRepository.findOneBy.mockImplementation(
+      async (where: Partial<User>) =>
+        [alice, admin].find((u) => (where.id ?? u.id) === u.id && (where.email ?? u.email) === u.email) ?? null,
     );
     queryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
     queryBuilder.stream.mockImplementation(async () => Readable.from([]));
@@ -154,28 +164,115 @@ describe('login over HTTP', () => {
       expect(res.status).toBe(200);
     });
 
-    // Until T4, every logged-in user can still create, edit and delete tasks
-    it('POST /tasks creates a task', async () => {
-      taskRepository.save.mockImplementation(async (task: Partial<Task>) => ({ id: TASK_ID, dueDate: null, ...task }));
+    it('lets a user see every task (AC4.3, TC-14)', async () => {
+      const res = await call('GET', '/tasks', { cookie: sessionCookie(alice.id) });
+      expect(res.status).toBe(200);
+      // No per-user condition: only the filters sent in the query
+      expect(queryBuilder.andWhere).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('as a user (AC4.2, TC-13)', () => {
+    const FORBIDDEN = { statusCode: 403, message: 'Forbidden' };
+
+    it('POST /tasks returns 403 and saves nothing', async () => {
       const res = await call('POST', '/tasks', { cookie: sessionCookie(alice.id), body: { title: 'New task' } });
-      expect(res.status).toBe(201);
-      expect(taskRepository.save).toHaveBeenCalled();
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual(FORBIDDEN);
+      expect(taskRepository.save).not.toHaveBeenCalled();
     });
 
-    it('PATCH /tasks/:id updates a task', async () => {
-      taskRepository.findOneBy.mockResolvedValue({ id: TASK_ID, title: 'A', status: 'todo', dueDate: null });
-      taskRepository.save.mockImplementation(async (task: Partial<Task>) => task);
-      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { title: 'B' } });
+    it('checks the role before validating the body: POST /tasks with {} is 403, not 400', async () => {
+      const res = await call('POST', '/tasks', { cookie: sessionCookie(alice.id), body: {} });
+      expect(res.status).toBe(403);
+    });
+
+    it('DELETE /tasks/:id returns 403 and deletes nothing', async () => {
+      const res = await call('DELETE', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id) });
+      expect(res.status).toBe(403);
+      expect(taskDataCalls()).toBe(0);
+    });
+
+    it.each([
+      ['title', { title: 'B' }],
+      ['description', { description: 'New text' }],
+      ['description (null)', { description: null }],
+      ['dueDate', { dueDate: '2026-04-01T00:00:00.000Z' }],
+      ['dueDate (null)', { dueDate: null }],
+      ['status', { status: 'done' }],
+    ])('PATCH /tasks/:id with %s returns 403 and changes nothing', async (_field, body) => {
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual(FORBIDDEN);
+      expect(taskDataCalls()).toBe(0);
+    });
+
+    it('PATCH /tasks/:id with an invalid value returns 400 before the role check', async () => {
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { status: 'urgent' } });
+      expect(res.status).toBe(400);
+      expect(taskDataCalls()).toBe(0);
+    });
+
+    it('PATCH /tasks/:id with none of those fields returns 200 and changes nothing', async () => {
+      const task = { id: TASK_ID, title: 'A', status: 'todo', dueDate: null };
+      taskRepository.findOneBy.mockResolvedValue({ ...task });
+      taskRepository.save.mockImplementation(async (saved: Partial<Task>) => saved);
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: {} });
       expect(res.status).toBe(200);
-      expect(taskRepository.save).toHaveBeenCalledWith(expect.objectContaining({ title: 'B' }));
+      expect(taskRepository.save).toHaveBeenCalledWith(task);
+    });
+  });
+
+  describe('as an admin (AC4.1, TC-11)', () => {
+    it('POST /tasks creates a task with status todo by default (AC4.9)', async () => {
+      taskRepository.save.mockImplementation(async (task: Partial<Task>) => ({ id: TASK_ID, dueDate: null, ...task }));
+      const res = await call('POST', '/tasks', { cookie: sessionCookie(admin.id), body: { title: 'New task' } });
+      expect(res.status).toBe(201);
+      expect(taskRepository.save).toHaveBeenCalledWith(expect.objectContaining({ title: 'New task', status: 'todo' }));
+    });
+
+    it('PATCH /tasks/:id updates every field and clears the due date with null (AC4.6)', async () => {
+      taskRepository.findOneBy.mockResolvedValue({
+        id: TASK_ID,
+        title: 'A',
+        description: 'Old',
+        status: 'todo',
+        dueDate: new Date('2026-03-20T00:00:00.000Z'),
+      });
+      taskRepository.save.mockImplementation(async (task: Partial<Task>) => task);
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, {
+        cookie: sessionCookie(admin.id),
+        body: { title: 'B', description: null, status: 'in_progress', dueDate: null },
+      });
+      expect(res.status).toBe(200);
+      expect(taskRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'B', description: null, status: 'in_progress', dueDate: null }),
+      );
+    });
+
+    it('PATCH /tasks/:id on a deleted task returns 404 (AC4.5)', async () => {
+      taskRepository.findOneBy.mockResolvedValue(null);
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(admin.id), body: { status: 'done' } });
+      expect(res.status).toBe(404);
+      expect(taskRepository.save).not.toHaveBeenCalled();
     });
 
     it('DELETE /tasks/:id deletes a task', async () => {
       taskRepository.delete.mockResolvedValue({ affected: 1 });
-      const res = await call('DELETE', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id) });
+      const res = await call('DELETE', `/tasks/${TASK_ID}`, { cookie: sessionCookie(admin.id) });
       expect(res.status).toBe(204);
       expect(taskRepository.delete).toHaveBeenCalledWith(TASK_ID);
     });
+
+    it('gets 403 on the next save once the users file makes them a user (AC4.8)', async () => {
+      userRepository.findOneBy.mockResolvedValue({ ...admin, role: 'user' });
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(admin.id), body: { status: 'done' } });
+      expect(res.status).toBe(403);
+      expect(taskDataCalls()).toBe(0);
+    });
+  });
+
+  describe('with a login, other checks', () => {
 
     it('finds the session cookie among other cookies', async () => {
       const res = await call('GET', '/tasks', { cookie: `theme=dark; ${sessionCookie(alice.id)}; lang=en` });
