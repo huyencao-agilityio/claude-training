@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Readable } from 'node:stream';
@@ -20,6 +20,8 @@ describe('TasksService', () => {
   const queryRunner = { release: jest.fn() };
   const repository = {
     findOneBy: jest.fn(),
+    save: jest.fn(),
+    create: jest.fn((task: Partial<Task>) => task),
     createQueryBuilder: jest.fn(() => queryBuilder),
     manager: { transaction: jest.fn(), connection: { createQueryRunner: () => queryRunner } },
   };
@@ -260,6 +262,106 @@ describe('TasksService', () => {
 
       await expect(read(service.exportCsv({}))).rejects.toThrow('connection refused');
       expect(queryRunner.release).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('update', () => {
+    const TASK_ID = '00000000-0000-4000-8000-000000000001';
+    const stored = () =>
+      ({
+        id: TASK_ID,
+        title: 'Write report',
+        description: 'Draft first',
+        status: 'todo',
+        dueDate: new Date('2026-03-20T00:00:00.000Z'),
+      }) as Task;
+
+    beforeEach(() => {
+      repository.save.mockReset().mockImplementation(async (task: Task) => task);
+    });
+
+    const admin = { role: 'admin' } as const;
+    const user = { role: 'user' } as const;
+
+    it.each([
+      ['title', { title: 'Renamed' }],
+      ['description', { description: 'New text' }],
+      ['description (null)', { description: null }],
+      ['dueDate', { dueDate: '2026-04-01T00:00:00.000Z' }],
+      ['dueDate (null)', { dueDate: null }],
+      ['status', { status: 'done' as const }],
+    ])('refuses a user who sends %s, without reading the task (AC4.2)', async (_field, dto) => {
+      await expect(service.update(TASK_ID, dto, user)).rejects.toThrow(ForbiddenException);
+      expect(repository.findOneBy).not.toHaveBeenCalled();
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('lets a user send none of the admin-only fields and changes nothing', async () => {
+      repository.findOneBy.mockResolvedValue(stored());
+
+      await expect(service.update(TASK_ID, {}, user)).resolves.toMatchObject(stored());
+      expect(repository.save).toHaveBeenCalledWith(stored());
+    });
+
+    it('saves every field an admin sends (AC4.1)', async () => {
+      repository.findOneBy.mockResolvedValue(stored());
+
+      await service.update(
+        TASK_ID,
+        { title: 'Renamed', description: 'New text', status: 'done', dueDate: '2026-04-01T00:00:00.000Z' },
+        admin,
+      );
+
+      expect(repository.save).toHaveBeenCalledWith({
+        ...stored(),
+        title: 'Renamed',
+        description: 'New text',
+        status: 'done',
+        dueDate: new Date('2026-04-01T00:00:00.000Z'),
+      });
+    });
+
+    it('clears the due date when dueDate is null (AC4.6)', async () => {
+      repository.findOneBy.mockResolvedValue(stored());
+
+      await service.update(TASK_ID, { dueDate: null }, admin);
+
+      expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({ dueDate: null }));
+    });
+
+    it('clears the description when description is null (AC4.6)', async () => {
+      repository.findOneBy.mockResolvedValue(stored());
+
+      await service.update(TASK_ID, { description: null }, admin);
+
+      expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({ description: null }));
+    });
+
+    it('keeps the due date when dueDate is not sent', async () => {
+      repository.findOneBy.mockResolvedValue(stored());
+
+      await service.update(TASK_ID, { title: 'Renamed' }, admin);
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ dueDate: new Date('2026-03-20T00:00:00.000Z') }),
+      );
+    });
+
+    it('throws NotFoundException when an admin changes a deleted task (AC4.5, AC4.6)', async () => {
+      repository.findOneBy.mockResolvedValue(null);
+
+      await expect(service.update(TASK_ID, { status: 'done' }, admin)).rejects.toThrow(NotFoundException);
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('create', () => {
+    it('saves the task with status todo when no status is sent (AC4.9)', async () => {
+      repository.save.mockReset().mockImplementation(async (task: Task) => task);
+
+      await service.create({ title: 'Write report' });
+
+      expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'todo' }));
     });
   });
 

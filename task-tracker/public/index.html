@@ -35,8 +35,9 @@
     </section>
 
     <div id="app" hidden>
-    <section class="card">
-      <h2>New task</h2>
+    <!-- Admin only (AC4.2); app.js shows it after login. Also the Edit form (AC4.6). -->
+    <section id="task-form-card" class="card" hidden>
+      <h2 id="task-form-heading">New task</h2>
       <form id="new-task-form" class="stacked">
         <label class="field">
           <span>Title</span>
@@ -58,7 +59,10 @@
             <option value="done">Done</option>
           </select>
         </label>
-        <button type="submit" id="save-btn">Save</button>
+        <div class="form-actions">
+          <button type="submit" id="save-btn">Save</button>
+          <button type="button" id="cancel-edit-btn" class="secondary" hidden>Cancel</button>
+        </div>
       </form>
       <p id="form-message" class="message"></p>
     </section>
@@ -75,9 +79,11 @@
         <button type="submit">Search</button>
       </form>
       <p id="count" class="muted"></p>
+      <!-- "Saved" or the error after a change in a row, for 5 seconds (AC4.4, AC4.5, AC4.8) -->
+      <p id="list-message" class="message" role="status"></p>
       <table>
         <thead>
-          <tr><th>Title</th><th>Status</th><th>Due date</th><th></th></tr>
+          <tr><th>Title</th><th>Status</th><th>Due date</th><th></th><th id="actions-header" hidden>Actions</th></tr>
         </thead>
         <tbody id="task-rows"></tbody>
       </table>
@@ -88,6 +94,17 @@
       </nav>
     </section>
     </div>
+
+    <!-- AC4.7: the button's value becomes the dialog's returnValue -->
+    <dialog id="delete-dialog">
+      <form method="dialog">
+        <p id="delete-text"></p>
+        <div class="form-actions">
+          <button value="delete" class="danger">Delete</button>
+          <button value="cancel" class="secondary">Cancel</button>
+        </div>
+      </form>
+    </dialog>
   </main>
   <script src="app.js"></script>
 </body>

@@ -11,10 +11,12 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { AuthenticatedRequest, Roles } from '../auth/auth.guard';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ListTasksQuery } from './dto/list-tasks.query';
 import { TaskFilterQuery } from './dto/task-filter.query';
@@ -55,16 +57,22 @@ export class TasksController {
   }
 
   @Post()
+  @Roles('admin')
   create(@Body() dto: CreateTaskDto) {
     return this.tasksService.create(dto);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTaskDto) {
-    return this.tasksService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTaskDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.tasksService.update(id, dto, req.user);
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(204)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.tasksService.remove(id);

@@ -28,3 +28,11 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 input.invalid { border-color: var(--danger); }
 input.invalid:focus { outline-color: #fecdca; border-color: var(--danger); }
 .field-error { color: var(--danger); }
+/* AC4.6, AC4.7: Edit / Delete buttons and the delete confirm */
+.form-actions { display: flex; gap: 8px; }
+button.secondary { background: #fff; color: #101828; border: 1px solid var(--border); }
+button.danger { background: var(--danger); }
+.row-actions { display: flex; gap: 6px; }
+.row-actions button { padding: 4px 10px; }
+dialog { border: 1px solid var(--border); border-radius: 8px; padding: 16px; max-width: 420px; }
+dialog::backdrop { background: rgba(16, 24, 40, .4); }
