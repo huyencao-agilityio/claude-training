@@ -25,9 +25,9 @@ git diff origin/main...HEAD -- . ':(exclude)**/package-lock.json'
 ```
 
 - If the branch is `main`, stop: the work needs its own branch (`<type>/<short-kebab-description>`).
-- Check that the branch doesn't already have an open MR (`mcp__gitlab__list_merge_requests` with `source_branch`). If it does, offer to update that MR's description instead of creating a new one.
+- Check that the branch doesn't already have an open MR. If it does, offer to update that MR's description instead of creating a new one.
 - If there are uncommitted changes, ask whether they belong in this MR (use the `commit-message` skill) or should be left out.
-- Issue: `$ARGUMENTS`, else the `Closes #N` / `Refs #N` in the commits. If there is one, read it (`mcp__gitlab__get_issue`) to get the problem right. If there is none, don't block on it; ask only when the MR is a code fix or feature.
+- Issue: `$ARGUMENTS`, else the `Closes #N` / `Refs #N` in the commits. If there is one, read it to get the problem right. If there is none, don't block on it; ask only when the MR is a code fix or feature.
 - Map the changed paths to the areas in the table below. An MR can touch several areas: run the checks and fill the sections for each one.
 
 ## 2. Area rules
@@ -37,7 +37,8 @@ git diff origin/main...HEAD -- . ':(exclude)**/package-lock.json'
 | Course notes | `dojo-ai-training/docs/` | Relative links resolve; `dojo-ai-training/README.md` lists added/renamed/moved files | **What**: topics or lessons added/changed. **Screenshots**: N/A. **Risk**: links from other files to anything renamed or moved. |
 | Exercises | `dojo-ai-training/exercises/day-N/` | Same as course notes; links to `../task-tracker` code point to existing files and lines | **What**: which day, what the exercise did and its result. **Screenshots**: optional (e.g. the Claude output being discussed). |
 | Claude setup | `**/CLAUDE.md`, `**/.claude/` | Skill / agent frontmatter is valid YAML with `name` and `description`; paths and commands it mentions exist | **What**: which rule, skill or agent, and what Claude now does differently. **Risk**: which workflows it affects. |
-| task-tracker | `task-tracker/` (except its `CLAUDE.md` / `.claude/`) | From the repo root: `npx tsc -p task-tracker --noEmit` and `npm --prefix task-tracker test`. Bug fix: the new test's failing output before the fix (see below) | **What**: behavior change from the API/UI user's view + exact code change (file, function). **How tested**: test counts before → after, manual checks such as a `curl` or UI step. **Screenshots**: before/after when the UI changes, else N/A. **Risk**: endpoints/screens affected, schema change (`synchronize: true` alters the table on next start). |
+| Tickets | `docs/tickets/` | Format follows `.claude/rules/tickets.md` | **What**: which ticket, what was added or changed (ACs, answered questions). **Screenshots**: N/A. **Risk**: the issue description must be updated to match. |
+| task-tracker | `task-tracker/` (except its `CLAUDE.md`) | From the repo root: `npx tsc -p task-tracker --noEmit` and `npm --prefix task-tracker test`. Bug fix: the new test's failing output before the fix (see below) | **What**: behavior change from the API/UI user's view + exact code change (file, function). **How tested**: test counts before → after, manual checks such as a `curl` or UI step. **Screenshots**: before/after when the UI changes, else N/A. **Risk**: endpoints/screens affected, schema change (`synchronize: true` alters the table on next start). |
 
 Bug-fix "before" result for task-tracker: prefer the failing output from the TDD step if it's in the conversation. Otherwise run the new test against `main`'s code, then put the fix back:
 
@@ -79,6 +80,11 @@ git restore --source HEAD -- <fixed source files>
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
+- **Ticket branch** (the diff adds a `docs/plans/` file): add a `## Review guide` section after What, so the reviewer can read the change before the code. Build it from the diff and the plan, not from memory:
+  - table `File | What changed | Why (AC)`, one row per changed file except the analysis and plan files; lock files are one row
+  - `AC | Files | Unit test`, one row per AC of the plan
+  - the plan's Deviations, or "None"
+  - links to the plan and analysis files in the branch
 - Leave manual-check boxes unchecked unless you actually did them.
 - Keep the Screenshots section even when there is nothing to show: replace the table with `N/A (<reason>, e.g. docs only / no UI change)`.
 
@@ -112,6 +118,6 @@ Show the title + description and ask for approval. Apply any edits the user asks
 git push -u origin HEAD
 ```
 
-Then create the MR with `mcp__gitlab__create_merge_request` (project `huyen.cao/claude-training`, source = current branch, target = `main`, the approved title and description, `remove_source_branch: true`). If the GitLab MCP isn't available, use `glab mr create --target-branch main --title ... --description ...`.
+Then create the MR: source = current branch, target = `main`, the approved title and description, delete the source branch on merge. Use the GitLab tools, or `glab mr create` if they aren't available.
 
 Report the MR URL. Don't merge, approve, or set auto-merge.

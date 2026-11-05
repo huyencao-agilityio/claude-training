@@ -1,45 +1,26 @@
 # CLAUDE.md
 
-Training repo for the 15-day Claude course (see `README.md` for the day-by-day plan). Each top-level folder has its own `CLAUDE.md`:
+Training repo for the 15-day Claude course (see `README.md` for the day-by-day plan).
 
-- `dojo-ai-training/`: Markdown course notes (`docs/`) and exercises (`exercises/day-N/`)
-- `task-tracker/`: NestJS + PostgreSQL app used to practice analyzing, fixing and reviewing code with Claude
+- `dojo-ai-training/`: Markdown course notes (`docs/`) and exercises (`exercises/day-N/`). Has its own `CLAUDE.md`.
+- `task-tracker/`: NestJS + PostgreSQL app used to practice analyzing, fixing and reviewing code with Claude. Has its own `CLAUDE.md`.
+- `docs/tickets/`: one file per ticket, written with `/define-ticket`.
+- `docs/analyze/`, `docs/plans/`: one analysis and one plan per issue, written with `/analyze-ticket` and `/build-plan`, committed with the ticket's code.
 
 Use only sample or made-up data. Real project code, customer data, API keys and `.env` contents stay out of the repo.
 
 Tasks and bugs are tracked as GitLab issues in `huyen.cao/claude-training`.
 
-## Commit messages
+## Ticket workflow
 
-Conventional Commits: `<type>(<scope>): <summary>`
+| Step | Command | Ends with |
+|---|---|---|
+| 1. Define | `/define-ticket <request>` | Approved ticket file in `docs/tickets/` and its GitLab issue |
+| 2. Analyze | `/analyze-ticket <issue URL>` | Ready / Not ready report in `docs/analyze/` |
+| 3. Plan | `/build-plan <issue URL>` | Plan approved by the developer in `docs/plans/` |
+| 4. Implement | `/implement-plan <issue URL>` | Verified, reviewed, uncommitted changes in the ticket's worktree, tested by the developer |
+| 5. Ship | `/ship <issue URL>` | Code, analysis and plan committed; pushed; MR opened with a review guide. The user merges |
 
-- type: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`
-- scope: the feature or area changed, e.g. `tasks`, `search`, `seed`, `claude-code-101`. Not the folder name. Omit it for repo-wide changes.
-- summary: English, imperative mood, ≤ 72 characters, no trailing period
-- Reference the GitLab issue in the body: `Refs #6` (related) or `Closes #6` (fixes it)
+The developer only types step 2. Each of steps 2-4 ends by asking whether to run the next one and runs it on a yes. Every step can also be run on its own, e.g. in a new session; it picks up its state from the analysis and plan files and the ticket's worktree.
 
-Example:
-
-```
-fix(search): match task titles case-insensitively
-
-Closes #6
-```
-
-## Branch names
-
-`<type>/<short-kebab-description>`, using the same types as commits. No issue ID in the branch name; link the issue in the commit and MR instead.
-
-Example: `fix/search-case-sensitive`, `feat/export-tasks-csv`
-
-## Merge requests
-
-- Draft the MR description and get the user's approval before pushing or creating the MR. Never enable auto-merge or merge into `main`; the user merges.
-- Title: plain English describing the change, no `fix:` / `feat(...)` prefix. Example: `Match task titles case-insensitively in search`
-- Description sections, each written as short bullet points (no long paragraphs):
-  - **What**: behaviour change and the exact code change
-  - **Why**: `Closes #<issue>` plus the problem being solved
-  - **How tested**: commands run with real results (before vs after), and manual checks as checkboxes
-  - **Screenshots**: before / after placeholders for the user to fill in
-  - **Risk**: scope of impact
-- Only describe what the diff actually changes; don't claim behaviour that already existed on `main`.
+Rules live in `.claude/rules/`: `git-conventions.md` (approvals, branches, worktrees, commits, issues, MRs), `tickets.md` (ticket format) and `code-structure.md` (task-tracker code layout). The commands order these rules; they don't replace them.
