@@ -22,3 +22,9 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .message.error { color: var(--danger); }
 .badge { font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #fee4e2; color: var(--danger); }
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+[hidden] { display: none !important; }
+.app-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+/* AC1.5: an empty required field */
+input.invalid { border-color: var(--danger); }
+input.invalid:focus { outline-color: #fecdca; border-color: var(--danger); }
+.field-error { color: var(--danger); }

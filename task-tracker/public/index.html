@@ -8,8 +8,33 @@
 </head>
 <body>
   <main>
-    <h1>Task Tracker</h1>
+    <header class="app-header">
+      <h1>Task Tracker</h1>
+      <!-- "Alice (user)": the logged-in user's name and role -->
+      <span id="current-user" class="muted"></span>
+    </header>
 
+    <!-- Both start hidden: app.js shows one once GET /auth/me answers, so no task data flashes -->
+    <section id="login-screen" class="card" hidden>
+      <h2>Log in</h2>
+      <!-- novalidate: empty fields are marked by app.js with "Required" (AC1.5) -->
+      <form id="login-form" class="stacked" novalidate>
+        <label class="field">
+          <span>Email</span>
+          <input name="email" type="text" autocomplete="username" />
+          <small class="field-error" hidden>Required</small>
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input name="password" type="password" autocomplete="current-password" />
+          <small class="field-error" hidden>Required</small>
+        </label>
+        <button type="submit" id="login-btn">Log in</button>
+      </form>
+      <p id="login-message" class="message error"></p>
+    </section>
+
+    <div id="app" hidden>
     <section class="card">
       <h2>New task</h2>
       <form id="new-task-form" class="stacked">
@@ -62,6 +87,7 @@
         <button type="button" id="next-page">Next</button>
       </nav>
     </section>
+    </div>
   </main>
   <script src="app.js"></script>
 </body>
