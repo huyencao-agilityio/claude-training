@@ -10,6 +10,7 @@
     "seed:users": "ts-node src/seed-users.ts",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
+    "check": "tsc --noEmit && jest --ci && nest build",
     "test": "jest",
     "test:db": "jest --testPathIgnorePatterns=/node_modules/ --testRegex \"\\\\.db\\\\.spec\\\\.ts$\""
   },

@@ -1,1 +1,9 @@
 .claude/worktrees/
+
+# Secrets: env files and private keys, in any folder. .env.example is the tracked template.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
