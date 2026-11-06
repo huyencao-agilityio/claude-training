@@ -1,0 +1,76 @@
+name: Release notes
+
+# Builds client-facing release notes when a release tag (e.g. v1.5.0) is pushed: the tickets done between the previous
+# release tag and this one, grouped into New Features, Bug Fixes and Improvements. Technical PRs (chore, ci, test,
+# refactor, docs, dependencies) and PRs labelled skip-release-notes are left out. A PR whose labels, title and branch
+# don't say what it is goes to Improvements and is flagged in the "For the team" table.
+# Uploads release-notes-<tag>.md as a workflow artifact and shows it in the run summary, followed by a
+# "For the team" table that shows where each PR went. It only reads from GitHub: it does not create the GitHub release.
+#
+# Tickets can live in any tracker. Set these repository variables (Settings > Secrets and variables > Actions > Variables):
+#   TICKET_PATTERN  Regex for ticket IDs in PR titles, branch names and descriptions. With a capture group, the group is the ID.
+#   TICKET_URL      Link to one ticket; {id} is replaced by the ID. Leave empty to show IDs without links.
+#   Jira:   TICKET_PATTERN = \b(?:PROJ|OPS)-\d+\b    TICKET_URL = https://acme.atlassian.net/browse/{id}
+#   Trello: TICKET_PATTERN = trello\.com/c/(\w+)     TICKET_URL = https://trello.com/c/{id}
+#   Not set: the tickets are the GitHub issues each PR closes ("Closes #12") or mentions ("Refs #12").
+#
+# Run it by hand (Actions > Release notes > Run workflow) to rebuild the notes for an existing tag.
+on:
+  push:
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build the notes for, e.g. v1.5.0
+        required: true
+        type: string
+      previous_tag:
+        description: Previous release tag. Leave empty to find it from the tag history.
+        required: false
+        type: string
+
+# One run per tag; pushing the same tag again (delete + re-push) cancels the run that is still going.
+concurrency:
+  group: release-notes-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  release-notes:
+    name: Build release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history and all tags, to find the previous tag and the commits in between
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Build release notes
+        id: notes
+        env:
+          # Inputs go through env, never straight into the script, so a tag name can't inject shell code.
+          TAG: ${{ inputs.tag || github.ref_name }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag }}
+          TICKET_PATTERN: ${{ vars.TICKET_PATTERN }}
+          TICKET_URL: ${{ vars.TICKET_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OUT_DIR: release-notes
+        run: node .github/scripts/release-notes.mjs
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.notes.outputs.artifact_name }}
+          path: release-notes/
+          if-no-files-found: error
+          retention-days: 90
