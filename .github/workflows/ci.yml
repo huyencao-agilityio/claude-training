@@ -1,0 +1,71 @@
+name: CI
+
+# Checks the task-tracker app on every pull request into main and on every push to main (merges).
+# There is no `paths` filter on purpose: the job always runs and reports a status, so it can be a
+# required check. When nothing under task-tracker/ changed, the job skips its checks and passes.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A new push to the same PR cancels the run that is still going; runs on main are never cancelled.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: task-tracker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: task-tracker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history, so the change detection below can diff against the base commit
+
+      - name: Detect task-tracker changes
+        id: changes
+        working-directory: .
+        env:
+          # PR: the base branch commit. Push: the commit main pointed to before the push.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "No usable base commit; running all checks."
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          if grep -qE '^(task-tracker/|\.github/workflows/ci\.yml$)' <<< "$CHANGED"; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No changes under task-tracker/; skipping checks."
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: steps.changes.outputs.app == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: task-tracker/package-lock.json
+
+      - name: Install dependencies
+        if: steps.changes.outputs.app == 'true'
+        run: npm ci
+
+      # Type-check, unit tests and build (see the `check` script in package.json).
+      # Unit specs mock the repository, so no database is needed; *.db.spec.ts files are excluded by the Jest config.
+      - name: Check
+        if: steps.changes.outputs.app == 'true'
+        run: npm run check
