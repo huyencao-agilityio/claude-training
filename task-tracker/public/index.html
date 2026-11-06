@@ -47,6 +47,15 @@
           <span>Description <small class="muted">(optional)</small></span>
           <textarea name="description" rows="3" placeholder="Add more details"></textarea>
         </label>
+        <!-- AC2.1: Medium unless the admin picks another one -->
+        <label class="field">
+          <span>Priority</span>
+          <select name="priority">
+            <option value="high">High</option>
+            <option value="medium" selected>Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
         <label class="field">
           <span>Due date</span>
           <input name="dueDate" type="date" />
@@ -68,13 +77,25 @@
     </section>
 
     <section class="card">
+      <!-- AC2.8 to AC2.10: a click loads page 1 of that tab with the applied filters (AC2.13) -->
+      <nav id="tabs" class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="active" aria-selected="true">Active</button>
+        <button type="button" role="tab" data-tab="overdue" aria-selected="false">Overdue</button>
+        <button type="button" role="tab" data-tab="done" aria-selected="false">Done</button>
+      </nav>
       <form id="filter-form" class="filters">
         <input name="search" placeholder="Search by title" />
-        <select name="status">
+        <!-- Hidden and not applied on the Done tab (AC2.10) -->
+        <select name="status" aria-label="Status">
           <option value="">All statuses</option>
           <option value="todo">To do</option>
           <option value="in_progress">In progress</option>
-          <option value="done">Done</option>
+        </select>
+        <select name="priority" aria-label="Priority">
+          <option value="">All priorities</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
         </select>
         <button type="submit">Search</button>
       </form>
@@ -83,7 +104,7 @@
       <p id="list-message" class="message" role="status"></p>
       <table>
         <thead>
-          <tr><th>Title</th><th>Status</th><th>Due date</th><th></th><th id="actions-header" hidden>Actions</th></tr>
+          <tr><th>Title</th><th>Priority</th><th>Status</th><th>Due date</th><th id="actions-header" hidden>Actions</th></tr>
         </thead>
         <tbody id="task-rows"></tbody>
       </table>

@@ -2,12 +2,13 @@ import { escapeCsvCell, toCsv } from './tasks-csv';
 import { TaskResponse } from './tasks.service';
 
 describe('tasks CSV', () => {
-  const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt';
+  const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt,priority';
   const task = (overrides: Partial<TaskResponse> = {}): TaskResponse => ({
     id: '00000000-0000-4000-8000-000000000001',
     title: 'Write report',
     description: 'Quarterly numbers',
     status: 'todo',
+    priority: 'high',
     dueDate: new Date('2026-03-01T09:30:00.000Z'),
     createdAt: new Date('2026-01-15T08:00:00.000Z'),
     updatedAt: new Date('2026-01-16T08:00:00.000Z'),
@@ -30,9 +31,19 @@ describe('tasks CSV', () => {
       expect(records(toCsv([task()]))).toEqual([
         HEADER,
         '00000000-0000-4000-8000-000000000001,Write report,Quarterly numbers,todo,' +
-          '2026-03-01T09:30:00.000Z,true,2026-01-15T08:00:00.000Z',
+          '2026-03-01T09:30:00.000Z,true,2026-01-15T08:00:00.000Z,high',
       ]);
     });
+
+    it.each(['high', 'medium', 'low'] as const)(
+      'writes priority %s in lowercase as the last column (AC2.12)',
+      (priority) => {
+        const [header, row] = records(toCsv([task({ priority })]));
+
+        expect(header.split(',').at(-1)).toBe('priority');
+        expect(row.split(',').at(-1)).toBe(priority);
+      },
+    );
 
     it('formats dates as ISO 8601 in UTC', () => {
       // Same instant given with a +07:00 offset comes out in UTC
@@ -45,7 +56,7 @@ describe('tasks CSV', () => {
       const csv = toCsv([task({ description: null, dueDate: null, isOverdue: false })]);
 
       expect(records(csv)[1]).toBe(
-        '00000000-0000-4000-8000-000000000001,Write report,,todo,,false,2026-01-15T08:00:00.000Z',
+        '00000000-0000-4000-8000-000000000001,Write report,,todo,,false,2026-01-15T08:00:00.000Z,high',
       );
     });
 

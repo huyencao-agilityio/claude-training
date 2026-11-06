@@ -45,7 +45,11 @@ describe('TasksService.findAll (PostgreSQL)', () => {
     const repository = queryRunner.manager.getRepository(Task);
     service = new TasksService(repository);
 
-    const saved = await repository.save(FIXTURE_TITLES.map((title) => repository.create({ title })));
+    // High and newest, so they come first on the page even when seeded tasks match the search too
+    // (the list is ordered by priority, then newest first)
+    const saved = await repository.save(
+      FIXTURE_TITLES.map((title) => repository.create({ title, priority: 'high' })),
+    );
     fixtureIds = new Map(saved.map((task) => [task.title, task.id]));
   });
 
@@ -101,5 +105,100 @@ describe('TasksService.findAll (PostgreSQL)', () => {
     const pagedIds = pages.flatMap((p) => p.items.map((task) => task.id));
     expect(new Set(pagedIds).size).toBe(7);
     expect([...pagedIds].sort()).toEqual(tied.map((task) => task.id).sort());
+  });
+
+  describe('T2: priority order, tabs and due days', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const todayStart = () => {
+      const now = new Date();
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    };
+
+    // Saves the tasks, then sets their created_at, which save() leaves to the database
+    const saveTasks = async (tasks: (Partial<Task> & { createdAt?: Date })[]) => {
+      const repository = queryRunner.manager.getRepository(Task);
+      const saved = await repository.save(tasks.map(({ createdAt: _c, ...task }) => repository.create(task)));
+      for (const [i, task] of tasks.entries()) {
+        if (task.createdAt) {
+          await queryRunner.query('UPDATE tasks SET created_at = $1 WHERE id = $2', [task.createdAt, saved[i].id]);
+        }
+      }
+      return saved;
+    };
+
+    const titles = (page: TaskPage) => page.items.map((task) => task.title);
+
+    it('lists High, then Medium, then Low, newest first inside one priority (AC2.4, AC2.5)', async () => {
+      const now = Date.now();
+      await saveTasks([
+        { title: 'Prio low old', priority: 'low', createdAt: new Date(now - 4 * 60_000) },
+        { title: 'Prio high old', priority: 'high', createdAt: new Date(now - 3 * 60_000) },
+        { title: 'Prio medium', priority: 'medium', createdAt: new Date(now - 2 * 60_000) },
+        { title: 'Prio low new', priority: 'low', createdAt: new Date(now - 60_000) },
+        { title: 'Prio high new', priority: 'high', createdAt: new Date(now) },
+      ]);
+      const expected = ['Prio high new', 'Prio high old', 'Prio medium', 'Prio low new', 'Prio low old'];
+
+      expect(titles(await service.findAll({ search: 'Prio ', limit: MAX_PAGE_LIMIT }))).toEqual(expected);
+
+      // Page by page, one task each: the same order, with nothing repeated or skipped
+      const paged: string[] = [];
+      for (let page = 1; page <= 6; page++) {
+        paged.push(...titles(await service.findAll({ search: 'Prio ', page, limit: 1 })));
+      }
+      expect(paged).toEqual(expected);
+    });
+
+    it('gives a task saved before T2 priority medium (AC2.11)', async () => {
+      const [task] = await saveTasks([{ title: 'Prio from before' }]);
+      // Same as a row the new column was added to: the default fills it
+      await queryRunner.query('UPDATE tasks SET priority = DEFAULT WHERE id = $1', [task.id]);
+
+      await expect(service.findOne(task.id)).resolves.toMatchObject({ priority: 'medium' });
+    });
+
+    it('puts each task on its tab, a task due today on Active (AC2.8 to AC2.10)', async () => {
+      const today = todayStart();
+      await saveTasks([
+        { title: 'Tab due tomorrow', status: 'todo', dueDate: new Date(today.getTime() + DAY) },
+        { title: 'Tab due today', status: 'todo', dueDate: today },
+        { title: 'Tab no due date', status: 'in_progress', dueDate: null },
+        { title: 'Tab due yesterday', status: 'todo', dueDate: new Date(today.getTime() - DAY) },
+        { title: 'Tab done', status: 'done', dueDate: new Date(today.getTime() - DAY) },
+      ]);
+      const onTab = async (tab: 'active' | 'overdue' | 'done') =>
+        titles(await service.findAll({ search: 'Tab ', tab, limit: MAX_PAGE_LIMIT })).sort();
+
+      await expect(onTab('active')).resolves.toEqual(['Tab due today', 'Tab due tomorrow', 'Tab no due date']);
+      await expect(onTab('overdue')).resolves.toEqual(['Tab due yesterday']);
+      await expect(onTab('done')).resolves.toEqual(['Tab done']);
+    });
+
+    it('rounds due dates saved as local midnight to the nearest 00:00 UTC, once (Q-51)', async () => {
+      const saved = await saveTasks([
+        { title: 'Due VN 20 March', dueDate: new Date('2026-03-19T17:00:00.000Z') }, // UTC+7
+        { title: 'Due US 20 March', dueDate: new Date('2026-03-20T05:00:00.000Z') }, // UTC-5
+        { title: 'Due UTC 20 March', dueDate: new Date('2026-03-20T00:00:00.000Z') },
+        { title: 'Due none', dueDate: null },
+      ]);
+
+      const updatedBefore = await queryRunner.query('SELECT updated_at FROM tasks WHERE id = $1', [saved[0].id]);
+
+      expect(await service.roundDueDatesToUtcDay()).toBeGreaterThanOrEqual(2);
+      // A data fix, not an edit: updated_at stays as it was
+      await expect(
+        queryRunner.query('SELECT updated_at FROM tasks WHERE id = $1', [saved[0].id]),
+      ).resolves.toEqual(updatedBefore);
+
+      const dueDates = await Promise.all(saved.map(async (task) => (await service.findOne(task.id)).dueDate));
+      expect(dueDates).toEqual([
+        new Date('2026-03-20T00:00:00.000Z'),
+        new Date('2026-03-20T00:00:00.000Z'),
+        new Date('2026-03-20T00:00:00.000Z'),
+        null,
+      ]);
+      // Every due date is now 00:00 UTC, so a second run changes nothing
+      await expect(service.roundDueDatesToUtcDay()).resolves.toBe(0);
+    });
   });
 });

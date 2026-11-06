@@ -10,6 +10,7 @@ Requires Node.js 22+ and Docker. `.env` is optional; `src/data-source.ts` falls 
 npm run db:up        # PostgreSQL on localhost:5433 (not 5432)
 npm run seed         # wipes the tasks table, inserts ~2,500 tasks
 npm run seed:users   # loads data/users.json into users (never touches tasks); log in as alice@example.com / Passw0rd
+npm run fix:due-dates # once after T2: rounds old due dates (creator's local midnight) to 00:00 UTC; safe to re-run
 npm run start:dev    # http://localhost:3000 (API + web UI in public/)
 npm run build        # nest build -> dist/
 npx tsc --noEmit     # type-check (no linter yet)

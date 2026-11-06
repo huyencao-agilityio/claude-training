@@ -15,6 +15,7 @@ cp .env.example .env   # optional, defaults match docker-compose
 npm run db:up          # PostgreSQL 17 on localhost:5433
 npm run seed           # ~2,500 sample tasks (wipes the tasks table)
 npm run seed:users     # sample accounts from data/users.json (never touches tasks)
+npm run fix:due-dates  # once after upgrading: rounds old due dates to 00:00 UTC (safe to re-run)
 npm run start:dev      # http://localhost:3000
 ```
 
@@ -50,10 +51,11 @@ Every endpoint except `POST /auth/login` needs a login and returns `401` without
 | --- | --- | --- |
 | POST | `/auth/login` | `{ email, password }` → `200 { name, role }` and the `session` cookie; `401` "Email or password is incorrect." |
 | GET | `/auth/me` | The logged-in user: `{ name, role }` |
-| GET | `/tasks?search=&status=&overdue=&page=&limit=` | List tasks, newest first, one page at a time: `{ items, total, page, limit }`. `search` matches part of the title, case-insensitive. `status`: `todo`, `in_progress`, `done`. `overdue`: `true` or `false`. `page` is 1–10000 (default 1); `limit` is 1–100 (default 20). Out-of-range values return 400 |
+| GET | `/tasks?tab=&priority=&search=&status=&page=&limit=` | List tasks one page at a time: `{ items, total, page, limit }`, High → Medium → Low, then newest first. `tab`: `active` (not done, due today or later or no due date), `overdue` (not done, due before 00:00 UTC today) or `done`; omitted = every task. `priority`: `high`, `medium`, `low`. `search` matches part of the title, case-insensitive. `status`: `todo`, `in_progress`, `done`; ignored when `tab=done`. `page` is 1–10000 (default 1); `limit` is 1–100 (default 20). Invalid or out-of-range values return 400 |
+| GET | `/tasks/export?tab=&priority=&search=&status=` | The same tasks in the same order as the list, without paging, as CSV; `priority` is the last column |
 | GET | `/tasks/:id` | One task |
-| POST | `/tasks` | `{ title, description?, status?, dueDate? }`, `dueDate` is an ISO 8601 string |
-| PATCH | `/tasks/:id` | Any of the fields above |
+| POST | `/tasks` | Admin only. `{ title, description?, status?, priority?, dueDate? }`; `priority` defaults to `medium`; `dueDate` is an ISO 8601 date or timestamp, saved as 00:00 UTC of its UTC day (no offset = UTC) |
+| PATCH | `/tasks/:id` | Any of the fields above. A `user` may change only `priority` |
 | DELETE | `/tasks/:id` | |
 
 Each task in a response includes a computed `isOverdue` flag.
@@ -67,6 +69,7 @@ src/
   data-source.ts       DB connection options (shared with the seed script)
   seed.ts              sample tasks
   seed-users.ts        loads the users file
+  fix-due-dates.ts     one-off: rounds due dates saved as local midnight to 00:00 UTC
   auth/                login, session cookie, global auth guard
   users/               user entity, users file checks, password hashing
   tasks/               entity, DTOs, service, controller

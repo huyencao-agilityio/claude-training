@@ -8,6 +8,7 @@ import { TasksService } from './tasks.service';
 describe('TasksService', () => {
   let service: TasksService;
   const queryBuilder = {
+    addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
@@ -39,47 +40,120 @@ describe('TasksService', () => {
     service = moduleRef.get(TasksService);
   });
 
-  describe('findAll', () => {
-    it('adds no overdue condition when overdue is omitted', async () => {
+  describe('findAll tabs and priority', () => {
+    // 10:00 UTC on 21 March: "today" starts at 00:00 UTC on 21 March (Q-34)
+    const NOW = new Date('2026-03-21T10:00:00.000Z');
+    const TODAY_START = new Date('2026-03-21T00:00:00.000Z');
+    const ACTIVE_SQL = "task.status != 'done' AND (task.dueDate IS NULL OR task.dueDate >= :todayStart)";
+    const OVERDUE_SQL = "task.status != 'done' AND task.dueDate < :todayStart";
+
+    beforeEach(() => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] }).setSystemTime(NOW);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('adds no condition when no tab or filter is sent', async () => {
       await service.findAll({});
 
       expect(queryBuilder.andWhere).not.toHaveBeenCalled();
     });
 
-    it('keeps only not-done tasks with a past due date when overdue is true', async () => {
-      await service.findAll({ overdue: true });
+    it('keeps not-done tasks with no due date or a due date from today on, on the Active tab (AC2.8)', async () => {
+      await service.findAll({ tab: 'active' });
 
-      // excludes done tasks even when past due, and tasks with no due date
-      expect(queryBuilder.andWhere).toHaveBeenCalledTimes(1);
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        "task.status != 'done' AND task.dueDate IS NOT NULL AND task.dueDate < :now",
-        { now: expect.any(Date) },
-      );
+      expect(queryBuilder.andWhere.mock.calls).toEqual([[ACTIVE_SQL, { todayStart: TODAY_START }]]);
     });
 
-    it('keeps done, undated and future tasks when overdue is false', async () => {
-      await service.findAll({ overdue: false });
+    it('keeps not-done tasks due before today on the Overdue tab (AC2.9)', async () => {
+      await service.findAll({ tab: 'overdue' });
 
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        "(task.status = 'done' OR task.dueDate IS NULL OR task.dueDate >= :now)",
-        { now: expect.any(Date) },
-      );
+      expect(queryBuilder.andWhere.mock.calls).toEqual([[OVERDUE_SQL, { todayStart: TODAY_START }]]);
     });
 
-    it('combines overdue with search and status', async () => {
-      await service.findAll({ search: 'report', status: 'todo', overdue: true });
+    it('starts "today" at 00:00 UTC whatever the hour (TC-64)', async () => {
+      jest.setSystemTime(new Date('2026-03-21T23:59:59.999Z'));
+      await service.findAll({ tab: 'overdue' });
+      jest.setSystemTime(new Date('2026-03-22T00:00:00.000Z'));
+      await service.findAll({ tab: 'overdue' });
 
-      expect(queryBuilder.andWhere).toHaveBeenCalledTimes(3);
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith("task.title ILIKE :search ESCAPE '\\'", {
-        search: '%report%',
-      });
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.status = :status', {
-        status: 'todo',
-      });
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        "task.status != 'done' AND task.dueDate IS NOT NULL AND task.dueDate < :now",
-        { now: expect.any(Date) },
-      );
+      expect(queryBuilder.andWhere.mock.calls.map(([, params]) => params)).toEqual([
+        { todayStart: new Date('2026-03-21T00:00:00.000Z') },
+        { todayStart: new Date('2026-03-22T00:00:00.000Z') },
+      ]);
+    });
+
+    it('keeps only done tasks on the Done tab, whatever their due date (AC2.10)', async () => {
+      await service.findAll({ tab: 'done' });
+
+      expect(queryBuilder.andWhere.mock.calls).toEqual([["task.status = 'done'"]]);
+    });
+
+    it('does not apply the status filter on the Done tab (AC2.10, AC2.14)', async () => {
+      await service.findAll({ tab: 'done', status: 'in_progress' });
+
+      expect(queryBuilder.andWhere.mock.calls).toEqual([["task.status = 'done'"]]);
+    });
+
+    it('applies the status filter on the other tabs', async () => {
+      await service.findAll({ tab: 'active', status: 'in_progress' });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.status = :status', { status: 'in_progress' });
+    });
+
+    it('keeps only the picked priority inside the tab (AC2.7)', async () => {
+      await service.findAll({ tab: 'overdue', priority: 'high' });
+
+      expect(queryBuilder.andWhere.mock.calls).toEqual([
+        ['task.priority = :priority', { priority: 'high' }],
+        [OVERDUE_SQL, { todayStart: TODAY_START }],
+      ]);
+    });
+
+    it('combines tab, priority, search and status (AC2.13)', async () => {
+      await service.findAll({ tab: 'active', priority: 'high', search: 'report', status: 'todo' });
+
+      expect(queryBuilder.andWhere.mock.calls).toEqual([
+        ["task.title ILIKE :search ESCAPE '\\'", { search: '%report%' }],
+        ['task.status = :status', { status: 'todo' }],
+        ['task.priority = :priority', { priority: 'high' }],
+        [ACTIVE_SQL, { todayStart: TODAY_START }],
+      ]);
+    });
+  });
+
+  describe('isOverdue', () => {
+    const due20March = {
+      id: '00000000-0000-4000-8000-000000000001',
+      title: 'Weekly Report',
+      description: null,
+      status: 'todo',
+      priority: 'medium',
+      dueDate: new Date('2026-03-20T00:00:00.000Z'),
+    } as Task;
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it.each([
+      ['during the due day', '2026-03-20T00:00:00.000Z', false],
+      ['at the last moment of the due day', '2026-03-20T23:59:59.999Z', false],
+      ['from 00:00 UTC the next day (AC2.9, AC2.16)', '2026-03-21T00:00:00.000Z', true],
+    ])('is %s: %s -> %s', async (_when, now, overdue) => {
+      jest.useFakeTimers().setSystemTime(new Date(now));
+      repository.findOneBy.mockResolvedValue(due20March);
+
+      await expect(service.findOne(due20March.id)).resolves.toMatchObject({ isOverdue: overdue });
+    });
+
+    it('is never true for a done task', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-04-01T00:00:00.000Z'));
+      repository.findOneBy.mockResolvedValue({ ...due20March, status: 'done' });
+
+      await expect(service.findOne(due20March.id)).resolves.toMatchObject({ isOverdue: false });
     });
   });
 
@@ -98,14 +172,18 @@ describe('TasksService', () => {
       expect(queryBuilder.take).toHaveBeenCalledWith(50);
     });
 
-    it('breaks createdAt ties by id so pages do not overlap', async () => {
+    it('orders High, Medium, Low, then newest first, ties broken by id (AC2.4, AC2.5)', async () => {
       await service.findAll({});
 
-      expect(queryBuilder.orderBy).toHaveBeenCalledTimes(1);
-      expect(queryBuilder.orderBy).toHaveBeenCalledWith('task.createdAt', 'DESC');
-      expect(queryBuilder.addOrderBy).toHaveBeenCalledTimes(1);
-      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith('task.id', 'DESC');
-      // orderBy replaces any earlier ordering, so id must be added after createdAt
+      expect(queryBuilder.addSelect.mock.calls).toEqual([
+        ["CASE task.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END", 'priority_rank'],
+      ]);
+      expect(queryBuilder.orderBy.mock.calls).toEqual([['priority_rank', 'ASC']]);
+      expect(queryBuilder.addOrderBy.mock.calls).toEqual([
+        ['task.createdAt', 'DESC'],
+        ['task.id', 'DESC'],
+      ]);
+      // orderBy replaces any earlier ordering, so createdAt and id must be added after it
       expect(queryBuilder.addOrderBy.mock.invocationCallOrder[0]).toBeGreaterThan(
         queryBuilder.orderBy.mock.invocationCallOrder[0],
       );
@@ -150,11 +228,14 @@ describe('TasksService', () => {
   });
 
   describe('exportCsv', () => {
-    const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt';
+    const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt,priority';
     // Raw rows as qb.stream() yields them: <alias>_<column name>, not entities
     const raw = {
       task_description: null,
       task_status: 'todo',
+      task_priority: 'high',
+      // From addSelect: not a task column, so it is not written to the file
+      priority_rank: 0,
       task_created_at: new Date('2026-01-15T08:00:00.000Z'),
       task_updated_at: new Date('2026-01-15T08:00:00.000Z'),
     };
@@ -165,29 +246,27 @@ describe('TasksService', () => {
       return csv;
     };
 
-    it('applies the same search, status and overdue filters as findAll', async () => {
-      const filters = { search: ' 50% ', status: 'todo', overdue: true } as const;
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('applies the same tab, priority, search and status filters as findAll (AC2.12)', async () => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] }).setSystemTime(new Date('2026-03-21T10:00:00Z'));
+      const filters = { search: ' 50% ', status: 'todo', tab: 'overdue', priority: 'high' } as const;
       await service.findAll(filters);
-      // Each query takes its own `now`, which can land a millisecond apart
-      const listCalls = queryBuilder.andWhere.mock.calls.map(([sql, params]) => [
-        sql,
-        'now' in params ? { ...params, now: expect.any(Date) } : params,
-      ]);
+      const listCalls = queryBuilder.andWhere.mock.calls;
       queryBuilder.andWhere.mockClear();
 
       await read(service.exportCsv(filters));
 
       expect(queryBuilder.andWhere.mock.calls).toEqual(listCalls);
-      expect(listCalls).toHaveLength(3);
+      expect(listCalls).toHaveLength(4);
     });
 
-    it('applies the overdue=false filter', async () => {
-      await read(service.exportCsv({ overdue: false }));
+    it('does not apply the status filter on the Done tab', async () => {
+      await read(service.exportCsv({ tab: 'done', status: 'todo' }));
 
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        "(task.status = 'done' OR task.dueDate IS NULL OR task.dueDate >= :now)",
-        { now: expect.any(Date) },
-      );
+      expect(queryBuilder.andWhere.mock.calls).toEqual([["task.status = 'done'"]]);
     });
 
     it('streams every matching task without paging', async () => {
@@ -199,12 +278,15 @@ describe('TasksService', () => {
       expect(queryBuilder.getManyAndCount).not.toHaveBeenCalled();
     });
 
-    it('keeps the list order: newest first, ties broken by id', async () => {
+    it('keeps the list order: High to Low, then newest first, ties broken by id (AC2.12)', async () => {
       await read(service.exportCsv({}));
 
       // orderBy replaces the whole ORDER BY, so a second call would silently drop this order
-      expect(queryBuilder.orderBy.mock.calls).toEqual([['task.createdAt', 'DESC']]);
-      expect(queryBuilder.addOrderBy.mock.calls).toEqual([['task.id', 'DESC']]);
+      expect(queryBuilder.orderBy.mock.calls).toEqual([['priority_rank', 'ASC']]);
+      expect(queryBuilder.addOrderBy.mock.calls).toEqual([
+        ['task.createdAt', 'DESC'],
+        ['task.id', 'DESC'],
+      ]);
     });
 
     it('returns only the header row when no task matches', async () => {
@@ -223,8 +305,8 @@ describe('TasksService', () => {
 
       await expect(read(service.exportCsv({}))).resolves.toBe(
         `\uFEFF${HEADER}\r\n` +
-          'a,Late,,todo,2000-01-01T00:00:00.000Z,true,2026-01-15T08:00:00.000Z\r\n' +
-          'b,Undated,,todo,,false,2026-01-15T08:00:00.000Z\r\n',
+          'a,Late,,todo,2000-01-01T00:00:00.000Z,true,2026-01-15T08:00:00.000Z,high\r\n' +
+          'b,Undated,,todo,,false,2026-01-15T08:00:00.000Z,high\r\n',
       );
     });
 
@@ -296,6 +378,35 @@ describe('TasksService', () => {
       expect(repository.save).not.toHaveBeenCalled();
     });
 
+    it('lets a user change the priority (AC2.3)', async () => {
+      repository.findOneBy.mockResolvedValue(stored());
+
+      await expect(service.update(TASK_ID, { priority: 'high' }, user)).resolves.toMatchObject({
+        priority: 'high',
+      });
+      expect(repository.save).toHaveBeenCalledWith({ ...stored(), priority: 'high' });
+    });
+
+    it('refuses a user who sends the priority together with an admin-only field', async () => {
+      await expect(service.update(TASK_ID, { priority: 'high', status: 'done' }, user)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a day', '2026-04-01'],
+      ['a time later that UTC day', '2026-04-01T15:00:00.000Z'],
+    ])('saves a due date sent as %s as 00:00 UTC of that day (AC2.16)', async (_form, dueDate) => {
+      repository.findOneBy.mockResolvedValue(stored());
+
+      await service.update(TASK_ID, { dueDate }, admin);
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ dueDate: new Date('2026-04-01T00:00:00.000Z') }),
+      );
+    });
+
     it('lets a user send none of the admin-only fields and changes nothing', async () => {
       repository.findOneBy.mockResolvedValue(stored());
 
@@ -362,6 +473,38 @@ describe('TasksService', () => {
       await service.create({ title: 'Write report' });
 
       expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'todo' }));
+    });
+
+    it('saves priority medium when no priority is sent (AC2.1)', async () => {
+      repository.save.mockReset().mockImplementation(async (task: Task) => task);
+
+      await service.create({ title: 'Write report' });
+
+      expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({ priority: 'medium' }));
+    });
+
+    it.each(['high', 'medium', 'low'] as const)('saves the picked priority %s (AC2.2)', async (priority) => {
+      repository.save.mockReset().mockImplementation(async (task: Task) => task);
+
+      await service.create({ title: 'Write report', priority });
+
+      expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({ priority }));
+    });
+
+    it.each([
+      ['the picked day', '2026-03-20'],
+      ['local midnight at UTC-5 (05:00 UTC)', '2026-03-20T05:00:00.000Z'],
+      ['a timestamp with an offset (18:00 UTC)', '2026-03-20T23:00:00+05:00'],
+      // No offset: read as UTC, not in the server's time zone
+      ['a timestamp with no offset', '2026-03-20T03:00:00'],
+    ])('saves a due date sent as %s as 00:00 UTC of its UTC day (AC2.16)', async (_form, dueDate) => {
+      repository.save.mockReset().mockImplementation(async (task: Task) => task);
+
+      await service.create({ title: 'Write report', dueDate });
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ dueDate: new Date('2026-03-20T00:00:00.000Z') }),
+      );
     });
   });
 

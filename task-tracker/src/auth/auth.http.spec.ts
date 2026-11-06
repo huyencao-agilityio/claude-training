@@ -25,6 +25,7 @@ describe('login over HTTP', () => {
   let admin: User;
 
   const queryBuilder = {
+    addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
@@ -221,6 +222,22 @@ describe('login over HTTP', () => {
       expect(res.status).toBe(200);
       expect(taskRepository.save).toHaveBeenCalledWith(task);
     });
+
+    it('PATCH /tasks/:id with a priority returns 200 and saves it (AC2.3, TC-18)', async () => {
+      const task = { id: TASK_ID, title: 'A', status: 'todo', priority: 'low', dueDate: null };
+      taskRepository.findOneBy.mockResolvedValue({ ...task });
+      taskRepository.save.mockImplementation(async (saved: Partial<Task>) => saved);
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { priority: 'high' } });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ priority: 'high' });
+      expect(taskRepository.save).toHaveBeenCalledWith({ ...task, priority: 'high' });
+    });
+
+    it.each(['urgent', null])('PATCH /tasks/:id with priority %p returns 400 and changes nothing', async (priority) => {
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { priority } });
+      expect(res.status).toBe(400);
+      expect(taskDataCalls()).toBe(0);
+    });
   });
 
   describe('as an admin (AC4.1, TC-11)', () => {
@@ -229,6 +246,18 @@ describe('login over HTTP', () => {
       const res = await call('POST', '/tasks', { cookie: sessionCookie(admin.id), body: { title: 'New task' } });
       expect(res.status).toBe(201);
       expect(taskRepository.save).toHaveBeenCalledWith(expect.objectContaining({ title: 'New task', status: 'todo' }));
+    });
+
+    it('POST /tasks with an unknown priority returns 400 and saves nothing (AC2.2, TC-17)', async () => {
+      const res = await call('POST', '/tasks', {
+        cookie: sessionCookie(admin.id),
+        body: { title: 'New task', priority: 'urgent' },
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({
+        message: ['priority must be one of the following values: high, medium, low'],
+      });
+      expect(taskRepository.save).not.toHaveBeenCalled();
     });
 
     it('PATCH /tasks/:id updates every field and clears the due date with null (AC4.6)', async () => {
