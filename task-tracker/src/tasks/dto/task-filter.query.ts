@@ -1,6 +1,9 @@
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
-import { TASK_STATUSES, TaskStatus } from '../task.entity';
+import { IsIn, IsOptional, IsString } from 'class-validator';
+import { TASK_PRIORITIES, TASK_STATUSES, TaskPriority, TaskStatus } from '../task.entity';
+
+// Tabs of the task list (AC2.8 to AC2.10)
+export const TASK_TABS = ['active', 'overdue', 'done'] as const;
+export type TaskTab = (typeof TASK_TABS)[number];
 
 // Filters shared by the task list (GET /tasks) and the CSV export (GET /tasks/export)
 export class TaskFilterQuery {
@@ -8,14 +11,17 @@ export class TaskFilterQuery {
   @IsString()
   search?: string;
 
+  // Not applied on the Done tab (AC2.10)
   @IsOptional()
   @IsIn(TASK_STATUSES)
   status?: TaskStatus;
 
-  // Query params arrive as strings. Only "true"/"false" become booleans; anything
-  // else is left as-is so @IsBoolean rejects it (Boolean("false") would be true).
+  // Omitted: every task, whatever its tab
   @IsOptional()
-  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
-  @IsBoolean()
-  overdue?: boolean;
+  @IsIn(TASK_TABS)
+  tab?: TaskTab;
+
+  @IsOptional()
+  @IsIn(TASK_PRIORITIES)
+  priority?: TaskPriority;
 }

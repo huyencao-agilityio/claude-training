@@ -20,4 +20,12 @@ describe('UpdateTaskDto', () => {
   it('rejects an unknown status', async () => {
     await expect(validate({ status: 'urgent' })).rejects.toThrow(BadRequestException);
   });
+
+  it.each(['high', 'medium', 'low'])('accepts priority %p (AC2.3)', async (priority) => {
+    await expect(validate({ priority })).resolves.toMatchObject({ priority });
+  });
+
+  it.each(['urgent', 'High', '', null])('rejects priority %p', async (priority) => {
+    await expect(validate({ priority })).rejects.toThrow(BadRequestException);
+  });
 });

@@ -20,8 +20,13 @@ const listMessage = document.getElementById('list-message');
 const actionsHeader = document.getElementById('actions-header');
 const deleteDialog = document.getElementById('delete-dialog');
 const deleteText = document.getElementById('delete-text');
+const tabs = document.getElementById('tabs');
 
 const STATUS_LABELS = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
+// In list order, most urgent first (AC2.4)
+const PRIORITY_LABELS = { high: 'High', medium: 'Medium', low: 'Low' };
+// The tab shown after login (AC2.8)
+const DEFAULT_TAB = 'active';
 
 // "Saved" and errors above the table go away after this long (Q-31, Q-48)
 const LIST_MESSAGE_MS = 5000;
@@ -41,24 +46,38 @@ let currentPage = 1;
 let totalPages = 1;
 // Only the latest request may update the table; a slower, older response is dropped
 let latestRequest = 0;
-// Filters of the page shown in the table, set only once a Search submit loads.
+// Tab and filters of the page shown in the table, set only once that page loads.
 // Prev/Next page through these, not through whatever is typed in the filter form.
-let appliedFilters = new URLSearchParams();
+let appliedFilters = new URLSearchParams({ tab: DEFAULT_TAB });
 
+// The filter form as typed, on the tab shown
 function readFilterForm() {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ tab: appliedFilters.get('tab') });
   const data = new FormData(filterForm);
-  if (data.get('search')) params.set('search', data.get('search'));
-  if (data.get('status')) params.set('status', data.get('status'));
+  for (const name of ['search', 'status', 'priority']) {
+    if (data.get(name)) params.set(name, data.get(name));
+  }
   return params;
 }
 
-// "2026-03-20" from <input type="date"> -> ISO timestamp for the API
-function toIsoDate(value) {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, month - 1, day).toISOString();
+// Puts the filter form back to the filters of the page shown
+function showFiltersInForm(filters) {
+  for (const name of ['search', 'status', 'priority']) {
+    filterForm.elements[name].value = filters.get(name) ?? '';
+  }
 }
 
+// The selected tab, and no status filter on the Done tab (AC2.10)
+function renderTabs() {
+  const tab = appliedFilters.get('tab');
+  for (const button of tabs.querySelectorAll('[data-tab]')) {
+    button.setAttribute('aria-selected', String(button.dataset.tab === tab));
+  }
+  filterForm.elements.status.hidden = tab === 'done';
+}
+
+// A due date is a calendar day, saved as 00:00 UTC (Q-51): its first 10 characters are the day,
+// shown as is to every user, with no conversion to the viewer's time zone (AC2.16)
 function formatDueDate(iso) {
   return iso ? iso.slice(0, 10) : '—';
 }
@@ -123,16 +142,28 @@ async function sendTaskChange(method, id, body) {
   return { ok: false, error: saveErrorMessage(res.status) };
 }
 
-function statusSelect(task) {
-  const options = Object.entries(STATUS_LABELS)
-    .map(([value, label]) => `<option value="${value}"${value === task.status ? ' selected' : ''}>${label}</option>`)
+// A dropdown in a task's row that saves the field as soon as a value is picked (AC4.4)
+function rowSelect(field, labels, value, extraClass = '') {
+  const options = Object.entries(labels)
+    .map(([option, label]) => `<option value="${option}"${option === value ? ' selected' : ''}>${label}</option>`)
     .join('');
-  return `<select class="row-status" aria-label="Status" data-old="${task.status}">${options}</select>`;
+  const label = field === 'status' ? 'Status' : 'Priority';
+  return `<select class="row-select ${extraClass}" data-field="${field}" aria-label="${label}" data-old="${value}">${options}</select>`;
+}
+
+// AC2.6: text and background take the color of the picked priority
+function paintPriority(select) {
+  if (select.dataset.field !== 'priority') return;
+  for (const value of Object.keys(PRIORITY_LABELS)) {
+    select.classList.toggle(`priority-${value}`, select.value === value);
+  }
 }
 
 function taskRow(task) {
   // Admin: status dropdown and Edit / Delete (AC4.4, AC4.6, AC4.7). User: status as text (AC4.2).
-  const status = isAdmin() ? statusSelect(task) : STATUS_LABELS[task.status];
+  // Priority: a dropdown for every logged-in user (AC2.3).
+  const status = isAdmin() ? rowSelect('status', STATUS_LABELS, task.status) : STATUS_LABELS[task.status];
+  const priority = rowSelect('priority', PRIORITY_LABELS, task.priority, `priority priority-${task.priority}`);
   const actions = isAdmin()
     ? `<td class="row-actions">
         <button type="button" class="secondary" data-action="edit">Edit</button>
@@ -141,9 +172,9 @@ function taskRow(task) {
     : '';
   return `<tr data-id="${task.id}">
     <td>${escapeHtml(task.title)}</td>
+    <td>${priority}</td>
     <td>${status}</td>
     <td>${formatDueDate(task.dueDate)}</td>
-    <td>${task.isOverdue ? '<span class="badge">Overdue</span>' : ''}</td>
     ${actions}
   </tr>`;
 }
@@ -191,13 +222,16 @@ async function fetchTasks(params) {
 // filters are only stored in appliedFilters once their page loads, so a failed
 // Search leaves Prev/Next paging through the filters still shown in the table.
 // pastEnd: which page to show when the page asked for no longer exists ('last' or 'first').
-async function loadTasks(page, filters = appliedFilters, { pastEnd = 'last' } = {}) {
+// showInForm: once the page loads, put the filter form back to its filters (tab switch).
+async function loadTasks(page, filters = appliedFilters, { pastEnd = 'last', showInForm = false } = {}) {
   const request = ++latestRequest;
   // Disabled until this page loads, so a double click can't skip past the last page
   prevPage.disabled = true;
   nextPage.disabled = true;
 
   const params = new URLSearchParams(filters);
+  // No status filter on the Done tab; it stays applied for the other tabs (AC2.10, AC2.14)
+  if (params.get('tab') === 'done') params.delete('status');
   params.set('page', page);
 
   const { body, error, unauthorized } = await fetchTasks(params);
@@ -215,10 +249,12 @@ async function loadTasks(page, filters = appliedFilters, { pastEnd = 'last' } = 
   const lastPage = Math.max(1, Math.ceil(total / limit));
   // Past the end (e.g. tasks were deleted elsewhere): show the last page, or page 1 after a change
   if (page > lastPage) {
-    return loadTasks(pastEnd === 'first' ? 1 : lastPage, filters);
+    return loadTasks(pastEnd === 'first' ? 1 : lastPage, filters, { showInForm });
   }
 
   appliedFilters = filters;
+  renderTabs();
+  if (showInForm) showFiltersInForm(filters);
   currentPage = page;
   totalPages = lastPage;
   const first = items.length ? (page - 1) * limit : 0;
@@ -241,6 +277,7 @@ function fillTaskForm(task) {
   fields.description.value = task.description ?? '';
   fields.dueDate.value = task.dueDate ? task.dueDate.slice(0, 10) : '';
   fields.status.value = task.status;
+  fields.priority.value = task.priority;
 }
 
 // AC4.6: the new task form becomes "Edit task" for this task
@@ -265,8 +302,8 @@ function stopEdit() {
   formMessage.textContent = '';
 }
 
-// Only the fields that differ from the task as opened. An untouched due date is not re-sent:
-// it is saved as local midnight and shown as its UTC day, so re-sending it could move it by a day.
+// Only the fields that differ from the task as opened. The due date is sent as the picked day
+// ("2026-03-20"); the API saves it as 00:00 UTC of that day (Q-51).
 // A cleared description or due date is sent as null (AC4.6, Q-50).
 function changedFields(task) {
   const fields = newTaskForm.elements;
@@ -276,9 +313,10 @@ function changedFields(task) {
   if (description !== (task.description ?? null)) body.description = description;
   const dueDay = fields.dueDate.value;
   if (dueDay !== (task.dueDate ? task.dueDate.slice(0, 10) : '')) {
-    body.dueDate = dueDay ? toIsoDate(dueDay) : null;
+    body.dueDate = dueDay || null;
   }
   if (fields.status.value !== task.status) body.status = fields.status.value;
+  if (fields.priority.value !== task.priority) body.priority = fields.priority.value;
   return body;
 }
 
@@ -306,13 +344,15 @@ async function saveEdit() {
 
 cancelEditButton.addEventListener('click', stopEdit);
 
-// AC4.4, AC4.5, AC4.8: a status picked in a row is saved at once, with no Save button
+// AC4.4, AC4.5, AC4.8, AC2.3: a status or priority picked in a row is saved at once, with no
+// Save button; the reload moves the task to its new place in the list
 rows.addEventListener('change', async (event) => {
-  const select = event.target.closest('select.row-status');
+  const select = event.target.closest('select.row-select');
   if (!select) return;
   const id = select.closest('tr').dataset.id;
+  paintPriority(select);
   select.disabled = true;
-  const result = await sendTaskChange('PATCH', id, { status: select.value });
+  const result = await sendTaskChange('PATCH', id, { [select.dataset.field]: select.value });
   if (!result) return;
 
   select.disabled = false;
@@ -322,6 +362,7 @@ rows.addEventListener('change', async (event) => {
     reloadAfterChange();
   } else {
     select.value = select.dataset.old;
+    paintPriority(select);
     showListMessage(result.error, 'error');
   }
 });
@@ -365,9 +406,11 @@ newTaskForm.addEventListener('submit', async (event) => {
   const body = {
     title: data.get('title'),
     status: data.get('status'),
+    priority: data.get('priority'),
   };
   if (data.get('description')) body.description = data.get('description');
-  if (data.get('dueDate')) body.dueDate = toIsoDate(data.get('dueDate'));
+  // The picked day as is ("2026-03-20"); the API saves it as 00:00 UTC (AC2.16)
+  if (data.get('dueDate')) body.dueDate = data.get('dueDate');
 
   const res = await apiFetch('/tasks', {
     method: 'POST',
@@ -381,7 +424,7 @@ newTaskForm.addEventListener('submit', async (event) => {
     formMessage.textContent = 'Task saved';
     formMessage.className = 'message ok';
     newTaskForm.reset();
-    // New tasks sort first, so jump back to page 1 to show it
+    // Newest first inside its priority, so back to page 1 of the tab shown
     loadTasks(1);
   } else {
     // 400: the validation message; anything else: one message per case (AC4.8)
@@ -397,6 +440,23 @@ filterForm.addEventListener('submit', (event) => {
   loadTasks(1, readFilterForm());
 });
 
+// AC2.13 to AC2.15: page 1 of the clicked tab, with the applied search, status and priority.
+// A priority picked without "Search" resets to "All priorities" (Q-37); search text or a
+// status changed without "Search" goes back to the applied one.
+function switchTab(tab) {
+  const filters = new URLSearchParams(appliedFilters);
+  filters.set('tab', tab);
+  if (filterForm.elements.priority.value !== (appliedFilters.get('priority') ?? '')) {
+    filters.delete('priority');
+  }
+  loadTasks(1, filters, { showInForm: true });
+}
+
+tabs.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-tab]');
+  if (button) switchTab(button.dataset.tab);
+});
+
 prevPage.addEventListener('click', () => loadTasks(currentPage - 1));
 
 nextPage.addEventListener('click', () => loadTasks(currentPage + 1));
@@ -405,7 +465,8 @@ nextPage.addEventListener('click', () => loadTasks(currentPage + 1));
 // The list is reset, so after logging in again the user gets page 1 with no filters.
 function showLogin(message) {
   latestRequest++; // drop any list response still on its way
-  appliedFilters = new URLSearchParams();
+  appliedFilters = new URLSearchParams({ tab: DEFAULT_TAB });
+  renderTabs();
   currentPage = 1;
   totalPages = 1;
   currentRole = null;
@@ -433,7 +494,7 @@ function showApp(user) {
   actionsHeader.hidden = !isAdmin();
   loginScreen.hidden = true;
   appSection.hidden = false;
-  loadTasks(1, new URLSearchParams());
+  loadTasks(1, new URLSearchParams({ tab: DEFAULT_TAB }));
 }
 
 // AC1.5: an empty field gets a red border and "Required"

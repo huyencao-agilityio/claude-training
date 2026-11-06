@@ -8,6 +8,8 @@ export const CSV_COLUMNS = [
   'dueDate',
   'isOverdue',
   'createdAt',
+  // Last column, lowercase (Q-39)
+  'priority',
 ] as const;
 
 // Lets Excel and other spreadsheet apps detect UTF-8 instead of guessing a legacy code page
@@ -37,6 +39,7 @@ function toRow(task: TaskResponse): string[] {
     formatDate(task.dueDate),
     String(task.isOverdue),
     formatDate(task.createdAt),
+    task.priority,
   ];
 }
 

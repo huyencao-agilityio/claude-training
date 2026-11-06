@@ -2,21 +2,15 @@ import 'reflect-metadata';
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { dataSourceOptions } from './data-source';
-import { Task, TASK_STATUSES } from './tasks/task.entity';
+import { Task, TASK_PRIORITIES, TASK_STATUSES } from './tasks/task.entity';
 
 const BULK_COUNT = 2500;
 
 const TITLE_WORDS = ['Review', 'Update', 'Prepare', 'Fix', 'Draft', 'Plan', 'Check', 'Write'];
 const TITLE_OBJECTS = ['budget', 'slides', 'API docs', 'onboarding', 'release notes', 'invoice list', 'roadmap', 'test plan'];
 
-// Due dates as the web app stores them: midnight in the creator's local time, sent as UTC.
-// A user in Vietnam (UTC+7) picking 20 March produces 2026-03-19T17:00:00Z.
-const VN_OFFSET_HOURS = 7;
-function dueAtLocalMidnight(date: string, utcOffsetHours: number): Date {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCHours(d.getUTCHours() - utcOffsetHours);
-  return d;
-}
+// A due date is a calendar day, saved as 00:00 UTC of that day whoever picks it (Q-51)
+const dueDay = (date: string) => new Date(`${date}T00:00:00Z`);
 
 function pick<T>(items: readonly T[], i: number): T {
   return items[i % items.length];
@@ -30,11 +24,11 @@ async function seed() {
   await repo.clear();
 
   const named: Partial<Task>[] = [
-    { title: 'Monthly Report', description: 'Compile KPIs for the monthly review', status: 'todo', dueDate: dueAtLocalMidnight('2026-10-31', 0) },
-    { title: 'Weekly Report', description: 'Created by the Vietnam team', status: 'todo', dueDate: dueAtLocalMidnight('2026-03-20', VN_OFFSET_HOURS) },
-    { title: 'Weekly sync notes', description: 'Created by the UK team', status: 'todo', dueDate: dueAtLocalMidnight('2026-03-20', 0) },
-    { title: 'Prepare client meeting', description: null, status: 'in_progress', dueDate: dueAtLocalMidnight('2026-10-16', VN_OFFSET_HOURS) },
-    { title: 'Quarterly report draft', description: null, status: 'done', dueDate: dueAtLocalMidnight('2026-09-30', 0) },
+    { title: 'Monthly Report', description: 'Compile KPIs for the monthly review', status: 'todo', priority: 'high', dueDate: dueDay('2026-10-31') },
+    { title: 'Weekly Report', description: 'Created by the Vietnam team', status: 'todo', priority: 'medium', dueDate: dueDay('2026-03-20') },
+    { title: 'Weekly sync notes', description: 'Created by the UK team', status: 'todo', priority: 'low', dueDate: dueDay('2026-03-20') },
+    { title: 'Prepare client meeting', description: null, status: 'in_progress', priority: 'high', dueDate: dueDay('2026-10-16') },
+    { title: 'Quarterly report draft', description: null, status: 'done', priority: 'medium', dueDate: dueDay('2026-09-30') },
   ];
 
   const bulk: Partial<Task>[] = Array.from({ length: BULK_COUNT }, (_, i) => {
@@ -44,7 +38,9 @@ async function seed() {
       title: `${pick(TITLE_WORDS, i)} ${pick(TITLE_OBJECTS, Math.floor(i / 8))} #${i + 1}`,
       description: i % 3 === 0 ? 'Auto-generated sample task' : null,
       status: pick(TASK_STATUSES, i),
-      dueDate: i % 5 === 0 ? null : dueAtLocalMidnight(`2026-${month}-${day}`, i % 2 ? VN_OFFSET_HOURS : 0),
+      // i / 3, not i: status already cycles every 3 rows, so each status gets every priority
+      priority: pick(TASK_PRIORITIES, Math.floor(i / 3)),
+      dueDate: i % 5 === 0 ? null : dueDay(`2026-${month}-${day}`),
     };
   });
 

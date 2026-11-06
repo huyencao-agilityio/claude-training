@@ -7,22 +7,32 @@ describe('ListTasksQuery', () => {
   const parse = (query: Record<string, string>): Promise<ListTasksQuery> =>
     pipe.transform(query, { type: 'query', metatype: ListTasksQuery });
 
-  it('parses overdue "true" as boolean true', async () => {
-    await expect(parse({ overdue: 'true' })).resolves.toMatchObject({ overdue: true });
+  it.each(['active', 'overdue', 'done'])('accepts tab=%p', async (tab) => {
+    await expect(parse({ tab })).resolves.toMatchObject({ tab });
   });
 
-  it('parses overdue "false" as boolean false', async () => {
-    await expect(parse({ overdue: 'false' })).resolves.toMatchObject({ overdue: false });
+  it.each(['high', 'medium', 'low'])('accepts priority=%p (AC2.7)', async (priority) => {
+    await expect(parse({ priority })).resolves.toMatchObject({ priority });
   });
 
-  it('leaves overdue undefined when omitted', async () => {
+  it('leaves tab and priority undefined when omitted', async () => {
     const query = await parse({});
 
-    expect(query.overdue).toBeUndefined();
+    expect(query.tab).toBeUndefined();
+    expect(query.priority).toBeUndefined();
   });
 
-  it.each(['abc', '1', 'TRUE', ''])('rejects overdue=%p with 400', async (value) => {
-    await expect(parse({ overdue: value })).rejects.toThrow(BadRequestException);
+  it.each(['all', 'Active', ''])('rejects tab=%p with 400', async (tab) => {
+    await expect(parse({ tab })).rejects.toThrow(BadRequestException);
+  });
+
+  it.each(['urgent', 'High', ''])('rejects priority=%p with 400', async (priority) => {
+    await expect(parse({ priority })).rejects.toThrow(BadRequestException);
+  });
+
+  // The overdue filter was replaced by tab=overdue; the global pipe drops unknown params
+  it('drops the old overdue param', async () => {
+    await expect(parse({ overdue: 'true' })).resolves.not.toHaveProperty('overdue');
   });
 
   it('parses page and limit as numbers', async () => {

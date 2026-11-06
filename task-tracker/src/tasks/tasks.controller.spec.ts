@@ -8,10 +8,11 @@ import { TasksService } from './tasks.service';
 
 // Runs the real controller, service and validation over HTTP; only the repository is mocked
 describe('GET /tasks/export', () => {
-  const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt';
+  const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt,priority';
   let app: INestApplication;
   let baseUrl: string;
   const queryBuilder = {
+    addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
@@ -83,6 +84,7 @@ describe('GET /tasks/export', () => {
           task_title: '=cmd, "x"',
           task_description: 'Tiếng Việt',
           task_status: 'done',
+          task_priority: 'low',
           task_due_date: null,
           task_created_at: new Date('2026-01-15T08:00:00.000Z'),
           task_updated_at: new Date('2026-01-15T08:00:00.000Z'),
@@ -95,12 +97,12 @@ describe('GET /tasks/export', () => {
     expect(body).toBe(
       `\uFEFF${HEADER}\r\n` +
         '00000000-0000-4000-8000-000000000001,"\'=cmd, ""x""",Tiếng Việt,done,,false,' +
-        '2026-01-15T08:00:00.000Z\r\n',
+        '2026-01-15T08:00:00.000Z,low\r\n',
     );
   });
 
-  it('passes search, status and overdue from the query string to the filter', async () => {
-    await get('?search=report&status=todo&overdue=true');
+  it('passes search, status, tab and priority from the query string to the filter (AC2.12)', async () => {
+    await get('?search=report&status=todo&tab=overdue&priority=high');
 
     expect(queryBuilder.andWhere).toHaveBeenCalledWith("task.title ILIKE :search ESCAPE '\\'", {
       search: '%report%',
@@ -108,9 +110,12 @@ describe('GET /tasks/export', () => {
     expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.status = :status', {
       status: 'todo',
     });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.priority = :priority', {
+      priority: 'high',
+    });
     expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-      "task.status != 'done' AND task.dueDate IS NOT NULL AND task.dueDate < :now",
-      { now: expect.any(Date) },
+      "task.status != 'done' AND task.dueDate < :todayStart",
+      { todayStart: expect.any(Date) },
     );
   });
 
@@ -122,7 +127,7 @@ describe('GET /tasks/export', () => {
     expect(queryBuilder.take).not.toHaveBeenCalled();
   });
 
-  it.each(['?status=archived', '?overdue=yes'])('rejects %s with 400', async (query) => {
+  it.each(['?status=archived', '?tab=late', '?priority=urgent', '?priority=High'])('rejects %s with 400', async (query) => {
     const res = await get(query);
 
     expect(res.status).toBe(400);

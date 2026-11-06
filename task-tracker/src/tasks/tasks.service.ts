@@ -7,7 +7,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { DEFAULT_PAGE_LIMIT, ListTasksQuery } from './dto/list-tasks.query';
 import { TaskFilterQuery } from './dto/task-filter.query';
 import { UpdateTaskDto } from './dto/update-task.dto';
-import { Task, TaskStatus } from './task.entity';
+import { Task, TaskPriority, TaskStatus } from './task.entity';
 import { CSV_HEADER, toCsvLine } from './tasks-csv';
 
 export type TaskResponse = Task & { isOverdue: boolean };
@@ -20,6 +20,7 @@ type RawTaskRow = {
   task_title: string;
   task_description: string | null;
   task_status: TaskStatus;
+  task_priority: TaskPriority;
   task_due_date: Date | null;
   task_created_at: Date;
   task_updated_at: Date;
@@ -28,8 +29,26 @@ type RawTaskRow = {
 // Escape LIKE special characters so the search term is matched literally.
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 
-// Only an admin may change these fields (AC4.2). T2 and T3 add fields a user may change too.
+// Only an admin may change these fields (AC4.2). Priority is left out on purpose: any
+// logged-in user may change it (AC2.3).
 const ADMIN_ONLY_FIELDS = ['title', 'description', 'dueDate', 'status'] as const;
+
+// 00:00 UTC of the day `date` falls on. A due date is a UTC calendar day (Q-51), and a task is
+// overdue once that day has ended, so "today" starts at 00:00 UTC too (Q-34).
+const startOfUtcDay = (date: Date) =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+
+// A timestamp that names its offset ("Z", "+07:00", "-0500"); new Date() would read one without
+// it in the server's own time zone
+const HAS_OFFSET = /(Z|[+-]\d{2}(:?\d{2})?)$/i;
+
+// "2026-03-20" or any ISO timestamp -> 00:00 UTC of its UTC day, the only form a due date is saved
+// in. A date alone is already read as UTC; a timestamp with no offset is read as UTC too.
+const toDueDay = (value: string) =>
+  startOfUtcDay(new Date(value.includes('T') && !HAS_OFFSET.test(value) ? `${value}Z` : value));
+
+// High, then Medium, then Low (AC2.4). The column is text, so its own order would be alphabetical.
+const PRIORITY_RANK = "CASE task.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END";
 
 @Injectable()
 export class TasksService {
@@ -75,6 +94,7 @@ export class TasksService {
       title: raw.task_title,
       description: raw.task_description,
       status: raw.task_status,
+      priority: raw.task_priority,
       dueDate: raw.task_due_date,
       createdAt: raw.task_created_at,
       updatedAt: raw.task_updated_at,
@@ -82,29 +102,37 @@ export class TasksService {
   }
 
   private filteredQuery(query: TaskFilterQuery): SelectQueryBuilder<Task> {
-    // Many tasks share a createdAt (the seed inserts 500 rows per statement), so id breaks
-    // the tie and keeps the order stable: no task repeats or goes missing between pages.
+    // Urgent first, then newest first inside one priority (AC2.4, AC2.5). Many tasks share a
+    // createdAt (the seed inserts 500 rows per statement), so id breaks the tie and keeps the
+    // order stable: no task repeats or goes missing between pages.
     const qb = this.tasks
       .createQueryBuilder('task')
-      .orderBy('task.createdAt', 'DESC')
+      .addSelect(PRIORITY_RANK, 'priority_rank')
+      .orderBy('priority_rank', 'ASC')
+      .addOrderBy('task.createdAt', 'DESC')
       .addOrderBy('task.id', 'DESC');
 
     const search = query.search?.trim();
     if (search) {
       qb.andWhere("task.title ILIKE :search ESCAPE '\\'", { search: `%${escapeLike(search)}%` });
     }
-    if (query.status) {
+    // The Done tab has only done tasks, so the status filter is not applied there (AC2.10)
+    if (query.status && query.tab !== 'done') {
       qb.andWhere('task.status = :status', { status: query.status });
     }
-    // Same rule as isOverdue in toResponse, but in SQL so the filter runs in the query
-    if (query.overdue === true) {
-      qb.andWhere("task.status != 'done' AND task.dueDate IS NOT NULL AND task.dueDate < :now", {
-        now: new Date(),
+    if (query.priority) {
+      qb.andWhere('task.priority = :priority', { priority: query.priority });
+    }
+    // Same overdue rule as isOverdue in toResponse, but in SQL so the filter runs in the query
+    const todayStart = startOfUtcDay(new Date());
+    if (query.tab === 'active') {
+      qb.andWhere("task.status != 'done' AND (task.dueDate IS NULL OR task.dueDate >= :todayStart)", {
+        todayStart,
       });
-    } else if (query.overdue === false) {
-      qb.andWhere("(task.status = 'done' OR task.dueDate IS NULL OR task.dueDate >= :now)", {
-        now: new Date(),
-      });
+    } else if (query.tab === 'overdue') {
+      qb.andWhere("task.status != 'done' AND task.dueDate < :todayStart", { todayStart });
+    } else if (query.tab === 'done') {
+      qb.andWhere("task.status = 'done'");
     }
 
     return qb;
@@ -123,7 +151,8 @@ export class TasksService {
       title: dto.title,
       description: dto.description ?? null,
       status: dto.status ?? 'todo',
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+      priority: dto.priority ?? 'medium',
+      dueDate: dto.dueDate ? toDueDay(dto.dueDate) : null,
     });
     return this.toResponse(await this.tasks.save(task));
   }
@@ -140,7 +169,7 @@ export class TasksService {
     Object.assign(task, {
       ...dto,
       // null clears the due date (AC4.6); new Date(null) would save 1970-01-01
-      dueDate: dto.dueDate === undefined ? task.dueDate : dto.dueDate === null ? null : new Date(dto.dueDate),
+      dueDate: dto.dueDate === undefined ? task.dueDate : dto.dueDate === null ? null : toDueDay(dto.dueDate),
     });
     return this.toResponse(await this.tasks.save(task));
   }
@@ -152,9 +181,31 @@ export class TasksService {
     }
   }
 
+  // One-off fix for due dates saved before T2 as the creator's local midnight, e.g. "20 March"
+  // picked at UTC+7 is 19 March 17:00 UTC. Rounding to the nearest 00:00 UTC gives back the
+  // picked day for any offset from UTC-11 to UTC+12; UTC+13/+14 land one day early, UTC-12 one
+  // day late. Rows already at 00:00 UTC are left alone, so a second run changes nothing. The
+  // task's updated_at is kept: nobody edited it. Returns the number of rows changed.
+  async roundDueDatesToUtcDay(): Promise<number> {
+    const result = await this.tasks
+      .createQueryBuilder()
+      .update(Task)
+      .set({
+        dueDate: () =>
+          "date_trunc('day', (due_date AT TIME ZONE 'UTC') + interval '12 hours') AT TIME ZONE 'UTC'",
+        // Without this, TypeORM sets updated_at to now for an @UpdateDateColumn
+        updatedAt: () => 'updated_at',
+      })
+      .where('due_date IS NOT NULL')
+      .andWhere("due_date <> date_trunc('day', due_date AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'")
+      .execute();
+    return result.affected ?? 0;
+  }
+
   private toResponse(task: Task): TaskResponse {
+    // Overdue from 00:00 UTC on the day after the due date; a task due today is not (AC2.8, AC2.9)
     const isOverdue =
-      task.status !== 'done' && task.dueDate !== null && task.dueDate.getTime() < Date.now();
+      task.status !== 'done' && task.dueDate !== null && task.dueDate < startOfUtcDay(new Date());
     return { ...task, isOverdue };
   }
 }
