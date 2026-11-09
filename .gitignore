@@ -1,5 +1,8 @@
 .claude/worktrees/
 
+# Local copies of the release notes, pulled from the CI-owned release-notes branch by the release-note-email skill.
+docs/release-notes/
+
 # Secrets: env files and private keys, in any folder. .env.example is the tracked template.
 .env
 .env.*
