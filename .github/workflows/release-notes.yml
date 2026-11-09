@@ -5,7 +5,9 @@ name: Release notes
 # refactor, docs, dependencies) and PRs labelled skip-release-notes are left out. A PR whose labels, title and branch
 # don't say what it is goes to Improvements and is flagged in the "For the team" table.
 # Uploads release-notes-<tag>.md as a workflow artifact and shows it in the run summary, followed by a
-# "For the team" table that shows where each PR went. It only reads from GitHub: it does not create the GitHub release.
+# "For the team" table that shows where each PR went. It also commits the file to docs/release-notes/ on the
+# release-notes branch, where the release-note-email skill reads it. That branch only holds release notes: it is never
+# merged into main and nobody pushes to it by hand. The workflow doesn't touch main or create the GitHub release.
 #
 # Tickets can live in any tracker. Set these repository variables (Settings > Secrets and variables > Actions > Variables):
 #   TICKET_PATTERN  Regex for ticket IDs in PR titles, branch names and descriptions. With a capture group, the group is the ID.
@@ -35,7 +37,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write # read the history; push the notes to the release-notes branch
   pull-requests: read
   issues: read
 
@@ -74,3 +76,44 @@ jobs:
           path: release-notes/
           if-no-files-found: error
           retention-days: 90
+
+      - name: Save release notes to the release-notes branch
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          FILE_NAME: ${{ steps.notes.outputs.artifact_name }}.md
+          BRANCH: release-notes
+        run: |
+          set -euo pipefail
+          worktree="$RUNNER_TEMP/release-notes-branch"
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # The branch holds only docs/release-notes/. Create it (with no history) on the first release.
+          # Full ref: a bare "release-notes" would also match refs/heads/feat/release-notes.
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH" > /dev/null; then
+            git fetch --no-tags origin "$BRANCH"
+            git worktree add --detach "$worktree" FETCH_HEAD
+            cd "$worktree"
+          else
+            git worktree add --detach "$worktree"
+            cd "$worktree"
+            git checkout --quiet --orphan "$BRANCH"
+            git rm -r -f -q .
+          fi
+
+          mkdir -p docs/release-notes
+          cp "$GITHUB_WORKSPACE/release-notes/$FILE_NAME" "docs/release-notes/$FILE_NAME"
+          git add docs/release-notes
+          if git diff --cached --quiet; then
+            echo "docs/release-notes/$FILE_NAME is unchanged on $BRANCH"
+            exit 0
+          fi
+          git commit --quiet -m "docs(release-notes): save release notes for $TAG"
+
+          # Two tags released at the same time can race: rebase on the other run's commit and retry.
+          for attempt in 1 2 3; do
+            git push origin "HEAD:$BRANCH" && break
+            [ "$attempt" = 3 ] && exit 1
+            git pull --rebase --no-tags origin "$BRANCH"
+          done
+          echo "Saved docs/release-notes/$FILE_NAME on $BRANCH"

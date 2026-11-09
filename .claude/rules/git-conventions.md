@@ -14,6 +14,7 @@
 - One ticket = one branch = one MR. Branch from an up-to-date `origin/main`.
 - Branch name: `<type>/<short-kebab-description>`, e.g. `fix/search-case-sensitive`, `feat/export-tasks-csv`. No issue ID in the branch name.
 - Tickets worked on in parallel get one git worktree each, under `.claude/worktrees/<slug>` (gitignored), and one Claude session each. Run `npm --prefix task-tracker install` in a new worktree.
+- **The `release-notes` branch on GitHub belongs to CI.** The Release notes workflow commits `docs/release-notes/release-notes-<tag>.md` to it for each release tag. It only holds release notes: never merge it into `main`, never open a PR from it, never push to it by hand. The `release-note-email` skill only reads it, into the gitignored `docs/release-notes/`.
 
 ## Commit messages
 
