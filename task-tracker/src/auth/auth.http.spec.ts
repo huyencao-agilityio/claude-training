@@ -8,6 +8,7 @@ import { TasksController } from '../tasks/tasks.controller';
 import { TasksService } from '../tasks/tasks.service';
 import { hashPassword } from '../users/password';
 import { User } from '../users/user.entity';
+import { UsersController } from '../users/users.controller';
 import { UsersService } from '../users/users.service';
 import { AuthController } from './auth.controller';
 import { AuthGuard, SESSION_EXPIRED_MESSAGE } from './auth.guard';
@@ -25,11 +26,12 @@ describe('login over HTTP', () => {
   let admin: User;
 
   const queryBuilder = {
+    leftJoin: jest.fn().mockReturnThis(),
     addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
-    skip: jest.fn().mockReturnThis(),
-    take: jest.fn().mockReturnThis(),
+    offset: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     setQueryRunner: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn(),
@@ -37,18 +39,26 @@ describe('login over HTTP', () => {
   };
   const taskRepository = {
     createQueryBuilder: jest.fn(() => queryBuilder),
-    findOneBy: jest.fn(),
+    findOne: jest.fn(),
     create: jest.fn((task: Partial<Task>) => task),
     save: jest.fn(),
     delete: jest.fn(),
     manager: { connection: { createQueryRunner: () => ({ release: jest.fn() }) } },
   };
-  const userRepository = { findOneBy: jest.fn() };
+  // GET /users (UsersService.listActive)
+  const userQueryBuilder = {
+    select: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    getMany: jest.fn(),
+  };
+  const userRepository = { findOneBy: jest.fn(), createQueryBuilder: jest.fn(() => userQueryBuilder) };
 
   // Every call that reads or writes task data
   const taskDataCalls = () =>
     taskRepository.createQueryBuilder.mock.calls.length +
-    taskRepository.findOneBy.mock.calls.length +
+    taskRepository.findOne.mock.calls.length +
     taskRepository.save.mock.calls.length +
     taskRepository.delete.mock.calls.length;
 
@@ -83,7 +93,7 @@ describe('login over HTTP', () => {
     } as User;
 
     const moduleRef = await Test.createTestingModule({
-      controllers: [TasksController, AuthController],
+      controllers: [TasksController, AuthController, UsersController],
       providers: [
         TasksService,
         UsersService,
@@ -136,6 +146,11 @@ describe('login over HTTP', () => {
       expect((await call('GET', '/auth/me')).status).toBe(401);
     });
 
+    it('GET /users returns 401 and reads no user list', async () => {
+      expect((await call('GET', '/users')).status).toBe(401);
+      expect(userRepository.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
     it('checks the login before validating the body: POST /tasks with {} is 401, not 400', async () => {
       const res = await call('POST', '/tasks', { body: {} });
       expect(res.status).toBe(401);
@@ -160,7 +175,7 @@ describe('login over HTTP', () => {
 
   describe('with a login', () => {
     it.each(TASK_ENDPOINTS.filter(([method]) => method === 'GET'))('%s %s works', async (method, path) => {
-      taskRepository.findOneBy.mockResolvedValue({ id: TASK_ID, title: 'A', status: 'todo', dueDate: null });
+      taskRepository.findOne.mockResolvedValue({ id: TASK_ID, title: 'A', status: 'todo', dueDate: null });
       const res = await call(method, path, { cookie: sessionCookie(alice.id) });
       expect(res.status).toBe(200);
     });
@@ -200,7 +215,6 @@ describe('login over HTTP', () => {
       ['description (null)', { description: null }],
       ['dueDate', { dueDate: '2026-04-01T00:00:00.000Z' }],
       ['dueDate (null)', { dueDate: null }],
-      ['status', { status: 'done' }],
     ])('PATCH /tasks/:id with %s returns 403 and changes nothing', async (_field, body) => {
       const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body });
       expect(res.status).toBe(403);
@@ -216,7 +230,7 @@ describe('login over HTTP', () => {
 
     it('PATCH /tasks/:id with none of those fields returns 200 and changes nothing', async () => {
       const task = { id: TASK_ID, title: 'A', status: 'todo', dueDate: null };
-      taskRepository.findOneBy.mockResolvedValue({ ...task });
+      taskRepository.findOne.mockResolvedValue({ ...task });
       taskRepository.save.mockImplementation(async (saved: Partial<Task>) => saved);
       const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: {} });
       expect(res.status).toBe(200);
@@ -225,7 +239,7 @@ describe('login over HTTP', () => {
 
     it('PATCH /tasks/:id with a priority returns 200 and saves it (AC2.3, TC-18)', async () => {
       const task = { id: TASK_ID, title: 'A', status: 'todo', priority: 'low', dueDate: null };
-      taskRepository.findOneBy.mockResolvedValue({ ...task });
+      taskRepository.findOne.mockResolvedValue({ ...task });
       taskRepository.save.mockImplementation(async (saved: Partial<Task>) => saved);
       const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { priority: 'high' } });
       expect(res.status).toBe(200);
@@ -261,7 +275,7 @@ describe('login over HTTP', () => {
     });
 
     it('PATCH /tasks/:id updates every field and clears the due date with null (AC4.6)', async () => {
-      taskRepository.findOneBy.mockResolvedValue({
+      taskRepository.findOne.mockResolvedValue({
         id: TASK_ID,
         title: 'A',
         description: 'Old',
@@ -280,7 +294,7 @@ describe('login over HTTP', () => {
     });
 
     it('PATCH /tasks/:id on a deleted task returns 404 (AC4.5)', async () => {
-      taskRepository.findOneBy.mockResolvedValue(null);
+      taskRepository.findOne.mockResolvedValue(null);
       const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(admin.id), body: { status: 'done' } });
       expect(res.status).toBe(404);
       expect(taskRepository.save).not.toHaveBeenCalled();
@@ -295,9 +309,112 @@ describe('login over HTTP', () => {
 
     it('gets 403 on the next save once the users file makes them a user (AC4.8)', async () => {
       userRepository.findOneBy.mockResolvedValue({ ...admin, role: 'user' });
+      // Status needs the task's assignee since T3, so the task is read first; it isn't theirs
+      taskRepository.findOne.mockResolvedValue({ id: TASK_ID, title: 'A', status: 'todo', dueDate: null, assigneeId: null });
       const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(admin.id), body: { status: 'done' } });
       expect(res.status).toBe(403);
+      expect(taskRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('assignee (T3)', () => {
+    const task = (assignee: User | null = null) => ({
+      id: TASK_ID,
+      title: 'A',
+      status: 'todo',
+      priority: 'medium',
+      dueDate: null,
+      assigneeId: assignee?.id ?? null,
+      assignee,
+    });
+
+    beforeEach(() => {
+      taskRepository.save.mockImplementation(async (saved: Partial<Task>) => saved);
+    });
+
+    it('GET /users returns the active users with id, name and email only (AC3.7, AC3.18)', async () => {
+      const listed = [{ id: admin.id, name: 'Admin', email: 'admin@example.com' }];
+      userQueryBuilder.getMany.mockResolvedValue(listed);
+
+      const res = await call('GET', '/users', { cookie: sessionCookie(alice.id) });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual(listed);
+      expect(userQueryBuilder.select).toHaveBeenCalledWith(['user.id', 'user.name', 'user.email']);
+      expect(userQueryBuilder.where).toHaveBeenCalledWith('user.removedAt IS NULL');
+    });
+
+    it('lets a user assign a task to another user (AC3.5, TC-35)', async () => {
+      taskRepository.findOne.mockResolvedValue(task());
+
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, {
+        cookie: sessionCookie(alice.id),
+        body: { assigneeId: admin.id },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.assignee).toEqual({ id: admin.id, name: 'Admin' });
+      // Never the email, role or hash of the assignee (AC3.7)
+      expect(JSON.stringify(body)).not.toMatch(/admin@example\.com|passwordHash|"role"/);
+    });
+
+    it('lets a user unassign a task with null (AC3.3)', async () => {
+      taskRepository.findOne.mockResolvedValue(task(admin));
+
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { assigneeId: null } });
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).assignee).toBeNull();
+    });
+
+    it('returns 400 for an id that is not an existing user and saves nothing (AC3.6, TC-36)', async () => {
+      taskRepository.findOne.mockResolvedValue(task());
+
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, {
+        cookie: sessionCookie(admin.id),
+        body: { assigneeId: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d' },
+      });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ message: 'assigneeId must be an existing user' });
+      expect(taskRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for an assigneeId that is not a uuid, before reading the task', async () => {
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { assigneeId: 'bob' } });
+
+      expect(res.status).toBe(400);
       expect(taskDataCalls()).toBe(0);
+    });
+
+    it("lets the task's assignee change its status (AC3.10, TC-43)", async () => {
+      taskRepository.findOne.mockResolvedValue(task(alice));
+
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { status: 'done' } });
+
+      expect(res.status).toBe(200);
+      expect(taskRepository.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'done' }));
+    });
+
+    it.each([
+      ['assigned to someone else (TC-44)', () => task(admin)],
+      ['unassigned (TC-45)', () => task()],
+    ])('returns 403 when a user changes the status of a task %s (AC3.11)', async (_case, stored) => {
+      taskRepository.findOne.mockResolvedValue(stored());
+
+      const res = await call('PATCH', `/tasks/${TASK_ID}`, { cookie: sessionCookie(alice.id), body: { status: 'done' } });
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ statusCode: 403, message: 'Forbidden' });
+      expect(taskRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('filters "Assigned to me" on the logged-in user (AC3.8)', async () => {
+      const res = await call('GET', '/tasks?assignee=me', { cookie: sessionCookie(alice.id) });
+
+      expect(res.status).toBe(200);
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.assigneeId = :userId', { userId: alice.id });
     });
   });
 
@@ -308,9 +425,9 @@ describe('login over HTTP', () => {
       expect(res.status).toBe(200);
     });
 
-    it('GET /auth/me returns the name and role (AC1.13)', async () => {
+    it('GET /auth/me returns the id, name and role (AC1.13)', async () => {
       const res = await call('GET', '/auth/me', { cookie: sessionCookie(alice.id) });
-      expect(await res.json()).toEqual({ name: 'Alice', role: 'user' });
+      expect(await res.json()).toEqual({ id: alice.id, name: 'Alice', role: 'user' });
     });
 
     it('is still accepted just under 24 hours after login (AC1.18)', async () => {
@@ -349,11 +466,11 @@ describe('login over HTTP', () => {
   });
 
   describe('POST /auth/login', () => {
-    it('returns 200 with the name and role and sets the session cookie (AC1.3, AC1.18)', async () => {
+    it('returns 200 with the id, name and role and sets the session cookie (AC1.3, AC1.18)', async () => {
       const res = await call('POST', '/auth/login', { body: { email: 'alice@example.com', password: 'Passw0rd' } });
 
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ name: 'Alice', role: 'user' });
+      expect(await res.json()).toEqual({ id: alice.id, name: 'Alice', role: 'user' });
       const cookie = res.headers.get('set-cookie') ?? '';
       expect(cookie).toMatch(/^session=[\w-]+\.[\w-]+;/);
       expect(cookie).toContain('Max-Age=2592000');
@@ -369,7 +486,7 @@ describe('login over HTTP', () => {
       const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
 
       const res = await call('GET', '/auth/me', { cookie });
-      expect(await res.json()).toEqual({ name: 'Alice', role: 'user' });
+      expect(await res.json()).toEqual({ id: alice.id, name: 'Alice', role: 'user' });
     });
 
     it.each([

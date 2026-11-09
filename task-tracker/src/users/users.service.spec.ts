@@ -17,8 +17,16 @@ describe('UsersService', () => {
     upsert: jest.fn(),
     createQueryBuilder: jest.fn(() => updateBuilder),
   };
+  const listBuilder = {
+    select: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    getMany: jest.fn(),
+  };
   const repository = {
     findOneBy: jest.fn(),
+    createQueryBuilder: jest.fn(() => listBuilder),
     manager: { transaction: jest.fn((work: (m: typeof manager) => unknown) => work(manager)) },
   };
 
@@ -92,6 +100,34 @@ describe('UsersService', () => {
     it('finds an active user by id, skipping removed users', async () => {
       await service.findActiveById('id-1');
       expect(repository.findOneBy).toHaveBeenCalledWith({ id: 'id-1', removedAt: IsNull() });
+    });
+  });
+
+  describe('listActive (AC3.15, AC3.18)', () => {
+    it('selects only the id, name and email, never the role or hash (AC3.7)', async () => {
+      await service.listActive();
+
+      expect(listBuilder.select).toHaveBeenCalledWith(['user.id', 'user.name', 'user.email']);
+    });
+
+    it('lists only users still in the users file (AC3.15)', async () => {
+      await service.listActive();
+
+      expect(listBuilder.where).toHaveBeenCalledWith('user.removedAt IS NULL');
+    });
+
+    it('orders by name A to Z whatever the case, then by email (AC3.18)', async () => {
+      await service.listActive();
+
+      expect(listBuilder.orderBy).toHaveBeenCalledWith('LOWER(user.name)', 'ASC');
+      expect(listBuilder.addOrderBy).toHaveBeenCalledWith('user.email', 'ASC');
+    });
+
+    it('returns the rows it reads', async () => {
+      const listed = [{ id: 'id-1', name: 'Admin', email: 'admin@example.com' }];
+      listBuilder.getMany.mockResolvedValue(listed);
+
+      await expect(service.listActive()).resolves.toBe(listed);
     });
   });
 });

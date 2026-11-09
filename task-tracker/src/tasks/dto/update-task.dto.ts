@@ -1,5 +1,14 @@
 import { Transform } from 'class-transformer';
-import { IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 import { TASK_PRIORITIES, TASK_STATUSES, TaskPriority, TaskStatus } from '../task.entity';
 
 export class UpdateTaskDto {
@@ -29,4 +38,10 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsDateString()
   dueDate?: string | null;
+
+  // Any logged-in user may change it (AC3.3); null unassigns. The service checks it is an
+  // active user (AC3.6).
+  @IsOptional()
+  @IsUUID()
+  assigneeId?: string | null;
 }

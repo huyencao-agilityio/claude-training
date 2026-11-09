@@ -5,6 +5,10 @@ import { TASK_PRIORITIES, TASK_STATUSES, TaskPriority, TaskStatus } from '../tas
 export const TASK_TABS = ['active', 'overdue', 'done'] as const;
 export type TaskTab = (typeof TASK_TABS)[number];
 
+// Assignee filter of the task list (AC3.8, AC3.16); omitted = anyone
+export const ASSIGNEE_FILTERS = ['me', 'unassigned'] as const;
+export type AssigneeFilter = (typeof ASSIGNEE_FILTERS)[number];
+
 // Filters shared by the task list (GET /tasks) and the CSV export (GET /tasks/export)
 export class TaskFilterQuery {
   @IsOptional()
@@ -24,4 +28,9 @@ export class TaskFilterQuery {
   @IsOptional()
   @IsIn(TASK_PRIORITIES)
   priority?: TaskPriority;
+
+  // "me" is the logged-in user, so the same URL gives each user their own tasks
+  @IsOptional()
+  @IsIn(ASSIGNEE_FILTERS)
+  assignee?: AssigneeFilter;
 }

@@ -31,8 +31,11 @@ const DEFAULT_TAB = 'active';
 // "Saved" and errors above the table go away after this long (Q-31, Q-48)
 const LIST_MESSAGE_MS = 5000;
 
-// Role of the logged-in user, from GET /auth/me or the login response
+// Role and id of the logged-in user, from GET /auth/me or the login response
 let currentRole = null;
+let currentUserId = null;
+// Users for the assignee dropdowns, from GET /users: { id, name, email }, A to Z (AC3.18)
+let users = [];
 // Tasks of the rows on screen, by id, for Edit and Delete
 let shownTasks = new Map();
 // The task open in the Edit form, as last opened or saved; null when the form creates a task
@@ -50,11 +53,14 @@ let latestRequest = 0;
 // Prev/Next page through these, not through whatever is typed in the filter form.
 let appliedFilters = new URLSearchParams({ tab: DEFAULT_TAB });
 
+// Filters of the filter row, sent as query params of the same name
+const FILTER_NAMES = ['search', 'status', 'priority', 'assignee'];
+
 // The filter form as typed, on the tab shown
 function readFilterForm() {
   const params = new URLSearchParams({ tab: appliedFilters.get('tab') });
   const data = new FormData(filterForm);
-  for (const name of ['search', 'status', 'priority']) {
+  for (const name of FILTER_NAMES) {
     if (data.get(name)) params.set(name, data.get(name));
   }
   return params;
@@ -62,7 +68,7 @@ function readFilterForm() {
 
 // Puts the filter form back to the filters of the page shown
 function showFiltersInForm(filters) {
-  for (const name of ['search', 'status', 'priority']) {
+  for (const name of FILTER_NAMES) {
     filterForm.elements[name].value = filters.get(name) ?? '';
   }
 }
@@ -88,8 +94,23 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// For a value inside a double-quoted attribute: escapeHtml leaves quotes as they are
+function escapeAttr(text) {
+  return escapeHtml(text).replace(/"/g, '&quot;');
+}
+
 function isAdmin() {
   return currentRole === 'admin';
+}
+
+// "Alice (alice@example.com)": the email tells apart two users with the same name (Q-52, Q-54)
+function userLabel(user) {
+  return `${user.name} (${user.email})`;
+}
+
+// Only the admin and the task's assignee change its status (AC3.10, AC3.11)
+function canChangeStatus(task) {
+  return isAdmin() || (task.assignee !== null && task.assignee.id === currentUserId);
 }
 
 // One message per failure case (AC4.8). The server's own text is not shown.
@@ -138,17 +159,45 @@ async function sendTaskChange(method, id, body) {
   const json = await res.json().catch(() => null);
   if (res.ok) return { ok: true, task: json };
   // 400: a value the form let through but the API rejects, e.g. a title over 200 characters
-  if (res.status === 400 && json?.message) return { ok: false, error: [].concat(json.message).join(', ') };
-  return { ok: false, error: saveErrorMessage(res.status) };
+  if (res.status === 400 && json?.message) {
+    return { ok: false, status: 400, error: [].concat(json.message).join(', ') };
+  }
+  return { ok: false, status: res.status, error: saveErrorMessage(res.status) };
 }
+
+const ROW_SELECT_LABELS = { status: 'Status', priority: 'Priority' };
 
 // A dropdown in a task's row that saves the field as soon as a value is picked (AC4.4)
 function rowSelect(field, labels, value, extraClass = '') {
   const options = Object.entries(labels)
     .map(([option, label]) => `<option value="${option}"${option === value ? ' selected' : ''}>${label}</option>`)
     .join('');
-  const label = field === 'status' ? 'Status' : 'Priority';
-  return `<select class="row-select ${extraClass}" data-field="${field}" aria-label="${label}" data-old="${value}">${options}</select>`;
+  return `<select class="row-select ${extraClass}" data-field="${field}" aria-label="${ROW_SELECT_LABELS[field]}" data-old="${value}">${options}</select>`;
+}
+
+// The Assignee dropdown of a row (AC3.3, AC3.7): "Unassigned", then the users A to Z. Closed, it
+// shows the name only; opened, every user is "Name (email)" (Q-55, see showFullNames).
+// A removed assignee isn't in the users list: their name is shown in this row only, as an option
+// that can't be picked again (AC3.15, D3).
+function assigneeSelect(task) {
+  const current = task.assignee?.id ?? '';
+  const option = (value, name, full, extra = '') =>
+    `<option value="${escapeAttr(value)}"${full ? ` data-name="${escapeAttr(name)}" data-full="${escapeAttr(full)}"` : ''}` +
+    `${value === current ? ' selected' : ''}${extra}>${escapeHtml(name)}</option>`;
+  const options = [option('', 'Unassigned')];
+  if (task.assignee && !users.some((user) => user.id === current)) {
+    options.push(option(current, task.assignee.name, null, ' disabled'));
+  }
+  for (const user of users) options.push(option(user.id, user.name, userLabel(user)));
+  return `<select class="row-select" data-field="assigneeId" aria-label="Assignee" data-old="${escapeAttr(current)}">${options.join('')}</select>`;
+}
+
+// Q-55: a closed dropdown draws the selected option's text, so the options carry the name only
+// and switch to "Name (email)" while the dropdown is open
+function showFullNames(select, full) {
+  for (const option of select.options) {
+    if (option.dataset.full) option.textContent = full ? option.dataset.full : option.dataset.name;
+  }
 }
 
 // AC2.6: text and background take the color of the picked priority
@@ -160,10 +209,16 @@ function paintPriority(select) {
 }
 
 function taskRow(task) {
-  // Admin: status dropdown and Edit / Delete (AC4.4, AC4.6, AC4.7). User: status as text (AC4.2).
-  // Priority: a dropdown for every logged-in user (AC2.3).
-  const status = isAdmin() ? rowSelect('status', STATUS_LABELS, task.status) : STATUS_LABELS[task.status];
+  // Admin: status dropdown and Edit / Delete (AC4.4, AC4.6, AC4.7). The task's assignee: status
+  // dropdown too (AC3.10). Anyone else: status as text (AC4.2, AC3.11).
+  // Priority and assignee: a dropdown for every logged-in user (AC2.3, AC3.3).
+  const status = canChangeStatus(task) ? rowSelect('status', STATUS_LABELS, task.status) : STATUS_LABELS[task.status];
   const priority = rowSelect('priority', PRIORITY_LABELS, task.priority, `priority priority-${task.priority}`);
+  // AC3.4: not shown on a task already assigned to the logged-in user
+  const assignToMe =
+    task.assignee?.id === currentUserId
+      ? ''
+      : '<button type="button" class="link" data-action="assign-me">Assign to me</button>';
   const actions = isAdmin()
     ? `<td class="row-actions">
         <button type="button" class="secondary" data-action="edit">Edit</button>
@@ -174,6 +229,7 @@ function taskRow(task) {
     <td>${escapeHtml(task.title)}</td>
     <td>${priority}</td>
     <td>${status}</td>
+    <td><div class="assignee-cell">${assigneeSelect(task)}${assignToMe}</div></td>
     <td>${formatDueDate(task.dueDate)}</td>
     ${actions}
   </tr>`;
@@ -265,10 +321,33 @@ async function loadTasks(page, filters = appliedFilters, { pastEnd = 'last', sho
   updatePager();
 
   shownTasks = new Map(items.map((t) => [t.id, t]));
-  const columns = isAdmin() ? 5 : 4;
+  const columns = isAdmin() ? 6 : 5;
   rows.innerHTML = items.length
     ? items.map(taskRow).join('')
     : `<tr><td colspan="${columns}" class="muted">No tasks match these filters.</td></tr>`;
+}
+
+// The form's Assignee select: "Unassigned", then every user as "Name (email)", A to Z (AC3.1)
+function fillFormAssignees() {
+  const select = newTaskForm.elements.assigneeId;
+  select.innerHTML =
+    '<option value="" selected>Unassigned</option>' +
+    users.map((user) => `<option value="${escapeAttr(user.id)}">${escapeHtml(userLabel(user))}</option>`).join('');
+}
+
+// Edit shows the assignee too (T4 UI > Edit). A removed assignee gets an option of their own that
+// can't be picked again (D3), so saving the form doesn't unassign them by accident.
+function showFormAssignee(task) {
+  const select = newTaskForm.elements.assigneeId;
+  select.querySelector('option[data-removed]')?.remove();
+  const id = task.assignee?.id ?? '';
+  if (id && !users.some((user) => user.id === id)) {
+    const option = new Option(task.assignee.name, id);
+    option.disabled = true;
+    option.dataset.removed = '';
+    select.add(option, 1);
+  }
+  select.value = id;
 }
 
 function fillTaskForm(task) {
@@ -278,6 +357,7 @@ function fillTaskForm(task) {
   fields.dueDate.value = task.dueDate ? task.dueDate.slice(0, 10) : '';
   fields.status.value = task.status;
   fields.priority.value = task.priority;
+  showFormAssignee(task);
 }
 
 // AC4.6: the new task form becomes "Edit task" for this task
@@ -296,6 +376,7 @@ function startEdit(task) {
 function stopEdit() {
   editing = null;
   newTaskForm.reset();
+  newTaskForm.elements.assigneeId.querySelector('option[data-removed]')?.remove();
   formHeading.textContent = 'New task';
   saveButton.textContent = 'Save';
   cancelEditButton.hidden = true;
@@ -317,6 +398,9 @@ function changedFields(task) {
   }
   if (fields.status.value !== task.status) body.status = fields.status.value;
   if (fields.priority.value !== task.priority) body.priority = fields.priority.value;
+  // "Unassigned" is sent as null (AC3.3)
+  const assigneeId = fields.assigneeId.value || null;
+  if (assigneeId !== (task.assignee?.id ?? null)) body.assigneeId = assigneeId;
   return body;
 }
 
@@ -344,35 +428,77 @@ async function saveEdit() {
 
 cancelEditButton.addEventListener('click', stopEdit);
 
-// AC4.4, AC4.5, AC4.8, AC2.3: a status or priority picked in a row is saved at once, with no
-// Save button; the reload moves the task to its new place in the list
+// After a change in a row: "Saved" and a reload that moves the task to its new place (AC4.4),
+// or the error (AC4.8). A 403 means the user lost the right meanwhile, e.g. the task was taken
+// over (AC3.12): the reload then shows the status as text.
+function afterRowChange(result) {
+  if (result.ok) {
+    showListMessage('Saved', 'ok');
+    reloadAfterChange();
+    return;
+  }
+  showListMessage(result.error, 'error');
+  if (result.status === 403) reloadAfterChange();
+}
+
+// AC4.4, AC4.5, AC4.8, AC2.3, AC3.3: a status, priority or assignee picked in a row is saved at
+// once, with no Save button
 rows.addEventListener('change', async (event) => {
   const select = event.target.closest('select.row-select');
   if (!select) return;
   const id = select.closest('tr').dataset.id;
+  const field = select.dataset.field;
   paintPriority(select);
+  showFullNames(select, false);
+  // "Unassigned" is sent as null (AC3.3)
+  const value = field === 'assigneeId' ? select.value || null : select.value;
   select.disabled = true;
-  const result = await sendTaskChange('PATCH', id, { [select.dataset.field]: select.value });
+  const result = await sendTaskChange('PATCH', id, { [field]: value });
   if (!result) return;
 
   select.disabled = false;
   if (result.ok) {
     select.dataset.old = select.value;
-    showListMessage('Saved', 'ok');
-    reloadAfterChange();
   } else {
     select.value = select.dataset.old;
     paintPriority(select);
-    showListMessage(result.error, 'error');
   }
+  afterRowChange(result);
 });
+
+// Q-55: "Name (email)" while an assignee dropdown is open (mouse, or keyboard focus), the name
+// only once it closes
+rows.addEventListener('mousedown', (event) => {
+  const select = event.target.closest('select[data-field="assigneeId"]');
+  if (select) showFullNames(select, true);
+});
+rows.addEventListener('focusin', (event) => {
+  const select = event.target.closest('select[data-field="assigneeId"]');
+  if (select) showFullNames(select, true);
+});
+rows.addEventListener('focusout', (event) => {
+  const select = event.target.closest('select[data-field="assigneeId"]');
+  if (select) showFullNames(select, false);
+});
+
+// AC3.4: take a task over in one click
+async function assignToMe(task, button) {
+  button.disabled = true;
+  const result = await sendTaskChange('PATCH', task.id, { assigneeId: currentUserId });
+  if (!result) return;
+  button.disabled = false;
+  afterRowChange(result);
+}
 
 rows.addEventListener('click', (event) => {
   const button = event.target.closest('button[data-action]');
   if (!button) return;
   const task = shownTasks.get(button.closest('tr').dataset.id);
   if (!task) return;
-  if (button.dataset.action === 'edit') {
+  // Before the else below, which treats any other action as Delete
+  if (button.dataset.action === 'assign-me') {
+    assignToMe(task, button);
+  } else if (button.dataset.action === 'edit') {
     startEdit(task);
   } else {
     // AC4.7: confirm first; the title is set as text, never as HTML
@@ -411,6 +537,8 @@ newTaskForm.addEventListener('submit', async (event) => {
   if (data.get('description')) body.description = data.get('description');
   // The picked day as is ("2026-03-20"); the API saves it as 00:00 UTC (AC2.16)
   if (data.get('dueDate')) body.dueDate = data.get('dueDate');
+  // Not sent for "Unassigned": the task is saved unassigned (AC3.2)
+  if (data.get('assigneeId')) body.assigneeId = data.get('assigneeId');
 
   const res = await apiFetch('/tasks', {
     method: 'POST',
@@ -470,6 +598,9 @@ function showLogin(message) {
   currentPage = 1;
   totalPages = 1;
   currentRole = null;
+  currentUserId = null;
+  users = [];
+  fillFormAssignees();
   shownTasks = new Map();
   pendingDelete = null;
   if (deleteDialog.open) deleteDialog.close();
@@ -485,15 +616,31 @@ function showLogin(message) {
   loginMessage.textContent = message;
 }
 
+// The users for the assignee dropdowns, read once per login: after the users file is loaded
+// again, the dropdowns change on the next page load (AC3.15). On a failure the dropdowns only
+// offer "Unassigned" and each task's current assignee.
+async function loadUsers() {
+  try {
+    const res = await apiFetch('/users');
+    if (res?.ok) users = await res.json();
+  } catch {
+    // The task list still loads; its own error shows if the server is down
+  }
+  fillFormAssignees();
+}
+
 // Shows the task list for the logged-in user, with "Alice (user)" in the header (AC1.3, AC1.13)
-function showApp(user) {
+async function showApp(user) {
   currentUser.textContent = `${user.name} (${user.role})`;
   // Only the admin creates, edits and deletes tasks (AC4.2)
   currentRole = user.role;
+  currentUserId = user.id;
   formCard.hidden = !isAdmin();
   actionsHeader.hidden = !isAdmin();
   loginScreen.hidden = true;
   appSection.hidden = false;
+  // The rows' assignee dropdowns need the users first
+  await loadUsers();
   loadTasks(1, new URLSearchParams({ tab: DEFAULT_TAB }));
 }
 

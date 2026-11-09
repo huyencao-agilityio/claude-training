@@ -5,6 +5,9 @@ import { User, UserRole } from './user.entity';
 
 export type HashedUserEntry = { email: string; name: string; role: UserRole; passwordHash: string };
 
+// What every logged-in user may see about the others: never the role or the hash (AC3.7, Q-52)
+export type ListedUser = Pick<User, 'id' | 'name' | 'email'>;
+
 @Injectable()
 export class UsersService {
   constructor(@InjectRepository(User) private readonly users: Repository<User>) {}
@@ -16,6 +19,18 @@ export class UsersService {
 
   findActiveById(id: string): Promise<User | null> {
     return this.users.findOneBy({ id, removedAt: IsNull() });
+  }
+
+  // The assignee dropdown: users still in the users file (AC3.15), by name A to Z whatever the
+  // case, then by email so two users with the same name keep one order (AC3.18)
+  listActive(): Promise<ListedUser[]> {
+    return this.users
+      .createQueryBuilder('user')
+      .select(['user.id', 'user.name', 'user.email'])
+      .where('user.removedAt IS NULL')
+      .orderBy('LOWER(user.name)', 'ASC')
+      .addOrderBy('user.email', 'ASC')
+      .getMany();
   }
 
   // Replaces the users with the file's entries in one transaction; tasks are never touched.

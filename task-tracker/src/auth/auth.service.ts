@@ -13,7 +13,8 @@ export const LOGIN_FAILED_MESSAGE = 'Email or password is incorrect.';
 // survives closing the browser (AC1.18).
 export const SESSION_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
-export type LoggedInUser = { name: string; role: UserRole };
+// id: the UI needs it for "Assign to me" and the assignee's status dropdown (AC3.4, AC3.10)
+export type LoggedInUser = { id: string; name: string; role: UserRole };
 
 // Checked when the email has no account, so a wrong email takes as long as a wrong password
 let dummyHash: Promise<string> | undefined;
@@ -42,8 +43,8 @@ export class AuthService {
     return this.toLoggedInUser(user);
   }
 
-  // Only the name and role leave the server; never the hash or the email
+  // Only the id, name and role leave the server; never the hash or the email
   private toLoggedInUser(user: User): LoggedInUser {
-    return { name: user.name, role: user.role };
+    return { id: user.id, name: user.name, role: user.role };
   }
 }

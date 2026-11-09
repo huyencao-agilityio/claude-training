@@ -28,4 +28,13 @@ describe('UpdateTaskDto', () => {
   it.each(['urgent', 'High', '', null])('rejects priority %p', async (priority) => {
     await expect(validate({ priority })).rejects.toThrow(BadRequestException);
   });
+
+  // null unassigns the task (AC3.3)
+  it.each(['0e9769f6-5998-47bd-ad0f-811ce374384f', null])('accepts assigneeId %p (AC3.3)', async (assigneeId) => {
+    await expect(validate({ assigneeId })).resolves.toMatchObject({ assigneeId });
+  });
+
+  it.each(['abc', '', 42])('rejects assigneeId %p', async (assigneeId) => {
+    await expect(validate({ assigneeId })).rejects.toThrow(BadRequestException);
+  });
 });

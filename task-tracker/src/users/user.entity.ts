@@ -23,7 +23,7 @@ export class User {
   @Column({ type: 'varchar', length: 10 })
   role: UserRole;
 
-  // Never returned by the API: AuthService only returns { name, role }
+  // Never returned by the API: AuthService only returns { id, name, role }
   @Column({ name: 'password_hash', type: 'text' })
   passwordHash: string;
 
