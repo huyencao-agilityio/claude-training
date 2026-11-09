@@ -8,9 +8,14 @@ export const CSV_COLUMNS = [
   'dueDate',
   'isOverdue',
   'createdAt',
+  // Just before priority (Q-40)
+  'assignee',
   // Last column, lowercase (Q-39)
   'priority',
 ] as const;
+
+// The assignee cell of a task nobody is assigned to (AC3.14)
+export const UNASSIGNED = 'Unassigned';
 
 // Lets Excel and other spreadsheet apps detect UTF-8 instead of guessing a legacy code page
 const BOM = '\uFEFF';
@@ -39,6 +44,7 @@ function toRow(task: TaskResponse): string[] {
     formatDate(task.dueDate),
     String(task.isOverdue),
     formatDate(task.createdAt),
+    task.assignee?.name ?? UNASSIGNED,
     task.priority,
   ];
 }

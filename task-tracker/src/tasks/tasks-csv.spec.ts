@@ -2,7 +2,7 @@ import { escapeCsvCell, toCsv } from './tasks-csv';
 import { TaskResponse } from './tasks.service';
 
 describe('tasks CSV', () => {
-  const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt,priority';
+  const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt,assignee,priority';
   const task = (overrides: Partial<TaskResponse> = {}): TaskResponse => ({
     id: '00000000-0000-4000-8000-000000000001',
     title: 'Write report',
@@ -12,6 +12,7 @@ describe('tasks CSV', () => {
     dueDate: new Date('2026-03-01T09:30:00.000Z'),
     createdAt: new Date('2026-01-15T08:00:00.000Z'),
     updatedAt: new Date('2026-01-16T08:00:00.000Z'),
+    assignee: { id: '00000000-0000-4000-8000-0000000000a1', name: 'Alice' },
     isOverdue: true,
     ...overrides,
   });
@@ -31,7 +32,7 @@ describe('tasks CSV', () => {
       expect(records(toCsv([task()]))).toEqual([
         HEADER,
         '00000000-0000-4000-8000-000000000001,Write report,Quarterly numbers,todo,' +
-          '2026-03-01T09:30:00.000Z,true,2026-01-15T08:00:00.000Z,high',
+          '2026-03-01T09:30:00.000Z,true,2026-01-15T08:00:00.000Z,Alice,high',
       ]);
     });
 
@@ -56,8 +57,23 @@ describe('tasks CSV', () => {
       const csv = toCsv([task({ description: null, dueDate: null, isOverdue: false })]);
 
       expect(records(csv)[1]).toBe(
-        '00000000-0000-4000-8000-000000000001,Write report,,todo,,false,2026-01-15T08:00:00.000Z,high',
+        '00000000-0000-4000-8000-000000000001,Write report,,todo,,false,2026-01-15T08:00:00.000Z,Alice,high',
       );
+    });
+
+    it('writes the assignee name just before priority, or Unassigned (AC3.14, TC-68)', () => {
+      const [header, assigned, unassigned] = records(toCsv([task(), task({ assignee: null })]));
+      const columns = header.split(',');
+
+      expect(columns.indexOf('assignee')).toBe(columns.indexOf('priority') - 1);
+      expect(assigned.split(',').at(-2)).toBe('Alice');
+      expect(unassigned.split(',').at(-2)).toBe('Unassigned');
+    });
+
+    it('escapes an assignee name that looks like a formula', () => {
+      const csv = toCsv([task({ assignee: { id: '00000000-0000-4000-8000-0000000000a2', name: '=Bob' } })]);
+
+      expect(records(csv)[1].split(',').at(-2)).toBe("'=Bob");
     });
 
     it('writes one row per task, keeping the given order', () => {

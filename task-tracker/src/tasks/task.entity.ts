@@ -2,9 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { User } from '../users/user.entity';
 
 export const TASK_STATUSES = ['todo', 'in_progress', 'done'] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -33,6 +37,18 @@ export class Task {
 
   @Column({ name: 'due_date', type: 'timestamptz', nullable: true })
   dueDate: Date | null;
+
+  // null = "Unassigned"; rows from before T3 get null (AC3.9). Indexed for the "Assigned to me" filter.
+  @Index()
+  @Column({ name: 'assignee_id', type: 'uuid', nullable: true })
+  assigneeId: string | null;
+
+  // Not eager: a User row holds the password hash, so it is loaded only where needed and
+  // toResponse() keeps only its id and name. Users are never deleted (only marked removed),
+  // so the link survives a users file reload (AC3.15).
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'assignee_id' })
+  assignee?: User | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

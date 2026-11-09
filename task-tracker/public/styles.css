@@ -45,3 +45,6 @@ select.priority-high { color: #b42318; background: #fee4e2; border-color: #fda29
 select.priority-medium { color: #b54708; background: #fef0c7; border-color: #fedf89; }
 select.priority-low { color: #067647; background: #dcfae6; border-color: #a6f4c5; }
 select.priority option { color: #101828; background: #fff; }
+/* AC3.3, AC3.4: the Assignee dropdown and "Assign to me" in a row */
+.assignee-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+button.link { background: none; color: #1d4ed8; padding: 0; text-decoration: underline; }

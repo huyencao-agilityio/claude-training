@@ -29,17 +29,22 @@ export class TasksController {
 
   constructor(private readonly tasksService: TasksService) {}
 
+  // req.user: "Assigned to me" (AC3.8)
   @Get()
-  findAll(@Query() query: ListTasksQuery) {
-    return this.tasksService.findAll(query);
+  findAll(@Query() query: ListTasksQuery, @Req() req: AuthenticatedRequest) {
+    return this.tasksService.findAll(query, req.user);
   }
 
   // Declared before ':id' so "export" is not taken as a task id
   @Get('export')
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Header('Content-Disposition', 'attachment; filename="tasks.csv"')
-  export(@Query() query: TaskFilterQuery, @Res({ passthrough: true }) res: Response) {
-    const csv = this.tasksService.exportCsv(query);
+  export(
+    @Query() query: TaskFilterQuery,
+    @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const csv = this.tasksService.exportCsv(query, req.user);
     // Express only unpipes when the client goes away; destroying the stream stops the query
     res.once('close', () => csv.destroy());
     // The default handler answers 400 with the error message; a database failure is a 500

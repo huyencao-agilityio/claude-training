@@ -1,5 +1,7 @@
 import { DataSource, QueryRunner } from 'typeorm';
 import { dataSourceOptions } from '../data-source';
+import { User } from '../users/user.entity';
+import { UsersService } from '../users/users.service';
 import { MAX_PAGE_LIMIT } from './dto/list-tasks.query';
 import { Task } from './task.entity';
 import { TaskPage, TasksService } from './tasks.service';
@@ -20,11 +22,13 @@ describe('TasksService.findAll (PostgreSQL)', () => {
   let queryRunner: QueryRunner;
   let service: TasksService;
   let fixtureIds: Map<string, string>;
+  // Who is asking; only "Assigned to me" reads it
+  const me = { id: '00000000-0000-4000-8000-0000000000a1', role: 'user' } as const;
 
   // Titles of the fixture tasks returned by the search; seeded rows may match too, so ignore them.
   const searchFixtures = async (search: string) => {
     const ids = new Set(fixtureIds.values());
-    const { items } = await service.findAll({ search, limit: MAX_PAGE_LIMIT });
+    const { items } = await service.findAll({ search, limit: MAX_PAGE_LIMIT }, me);
     return items
       .filter((task) => ids.has(task.id))
       .map((task) => task.title)
@@ -43,7 +47,7 @@ describe('TasksService.findAll (PostgreSQL)', () => {
     queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     const repository = queryRunner.manager.getRepository(Task);
-    service = new TasksService(repository);
+    service = new TasksService(repository, new UsersService(queryRunner.manager.getRepository(User)));
 
     // High and newest, so they come first on the page even when seeded tasks match the search too
     // (the list is ordered by priority, then newest first)
@@ -97,7 +101,7 @@ describe('TasksService.findAll (PostgreSQL)', () => {
     // One query at a time: the transaction's single connection can't run them in parallel
     const pages: TaskPage[] = [];
     for (const page of [1, 2, 3, 4]) {
-      pages.push(await service.findAll({ search: 'Pagination tie', page, limit: 3 }));
+      pages.push(await service.findAll({ search: 'Pagination tie', page, limit: 3 }, me));
     }
 
     expect(pages.map((p) => p.items.length)).toEqual([3, 3, 1, 0]);
@@ -139,12 +143,12 @@ describe('TasksService.findAll (PostgreSQL)', () => {
       ]);
       const expected = ['Prio high new', 'Prio high old', 'Prio medium', 'Prio low new', 'Prio low old'];
 
-      expect(titles(await service.findAll({ search: 'Prio ', limit: MAX_PAGE_LIMIT }))).toEqual(expected);
+      expect(titles(await service.findAll({ search: 'Prio ', limit: MAX_PAGE_LIMIT }, me))).toEqual(expected);
 
       // Page by page, one task each: the same order, with nothing repeated or skipped
       const paged: string[] = [];
       for (let page = 1; page <= 6; page++) {
-        paged.push(...titles(await service.findAll({ search: 'Prio ', page, limit: 1 })));
+        paged.push(...titles(await service.findAll({ search: 'Prio ', page, limit: 1 }, me)));
       }
       expect(paged).toEqual(expected);
     });
@@ -167,7 +171,7 @@ describe('TasksService.findAll (PostgreSQL)', () => {
         { title: 'Tab done', status: 'done', dueDate: new Date(today.getTime() - DAY) },
       ]);
       const onTab = async (tab: 'active' | 'overdue' | 'done') =>
-        titles(await service.findAll({ search: 'Tab ', tab, limit: MAX_PAGE_LIMIT })).sort();
+        titles(await service.findAll({ search: 'Tab ', tab, limit: MAX_PAGE_LIMIT }, me)).sort();
 
       await expect(onTab('active')).resolves.toEqual(['Tab due today', 'Tab due tomorrow', 'Tab no due date']);
       await expect(onTab('overdue')).resolves.toEqual(['Tab due yesterday']);
@@ -199,6 +203,82 @@ describe('TasksService.findAll (PostgreSQL)', () => {
       ]);
       // Every due date is now 00:00 UTC, so a second run changes nothing
       await expect(service.roundDueDatesToUtcDay()).resolves.toBe(0);
+    });
+  });
+
+  describe('T3: assignee', () => {
+    let ann: User;
+    let ben: User;
+
+    // Assigned tasks need real user rows (foreign key); they are rolled back with the rest
+    beforeEach(async () => {
+      const users = queryRunner.manager.getRepository(User);
+      const user = (name: string) =>
+        users.create({ email: `${name.toLowerCase()}.t3-spec@example.com`, name, role: 'user', passwordHash: 'x' });
+      [ann, ben] = await users.save([user('Ann'), user('Ben')]);
+      const tasks = queryRunner.manager.getRepository(Task);
+      await tasks.save([
+        tasks.create({ title: 'Asg Ann high', priority: 'high', assigneeId: ann.id }),
+        tasks.create({ title: 'Asg Ann low', priority: 'low', assigneeId: ann.id }),
+        tasks.create({ title: 'Asg Ben', priority: 'high', assigneeId: ben.id }),
+        tasks.create({ title: 'Asg none', priority: 'high' }),
+      ]);
+    });
+
+    const list = async (filters: object, user: { id: string; role: 'admin' | 'user' } = me) =>
+      (await service.findAll({ search: 'Asg ', limit: MAX_PAGE_LIMIT, ...filters }, user)).items;
+
+    it('shows the assignee as id and name only, and null for an unassigned task (AC3.7, AC3.9)', async () => {
+      const items = await list({});
+      const byTitle = new Map(items.map((task) => [task.title, task.assignee]));
+
+      expect(byTitle.get('Asg Ann high')).toEqual({ id: ann.id, name: 'Ann' });
+      expect(byTitle.get('Asg none')).toBeNull();
+      expect(items.every((task) => !('assigneeId' in task))).toBe(true);
+    });
+
+    it('keeps only my tasks for "Assigned to me", together with the priority filter (AC3.8)', async () => {
+      const asAnn = { id: ann.id, role: 'user' } as const;
+
+      expect((await list({ assignee: 'me' }, asAnn)).map((t) => t.title)).toEqual(['Asg Ann high', 'Asg Ann low']);
+      expect((await list({ assignee: 'me', priority: 'high' }, asAnn)).map((t) => t.title)).toEqual(['Asg Ann high']);
+    });
+
+    it('keeps only the unassigned tasks for "Unassigned" (AC3.16)', async () => {
+      expect((await list({ assignee: 'unassigned' })).map((t) => t.title)).toEqual(['Asg none']);
+    });
+
+    it("still shows the name of an assignee removed from the users file (AC3.15)", async () => {
+      await queryRunner.query('UPDATE users SET removed_at = now() WHERE id = $1', [ben.id]);
+
+      const benTask = (await list({})).find((task) => task.title === 'Asg Ben');
+
+      expect(benTask?.assignee).toEqual({ id: ben.id, name: 'Ben' });
+    });
+
+    it('saves and returns the assignee through create and update (AC3.1, AC3.3)', async () => {
+      const created = await service.create({ title: 'Asg created', assigneeId: ann.id });
+      expect(created.assignee).toEqual({ id: ann.id, name: 'Ann' });
+
+      const updated = await service.update(created.id, { assigneeId: ben.id }, me);
+      expect(updated.assignee).toEqual({ id: ben.id, name: 'Ben' });
+      await expect(service.findOne(created.id)).resolves.toMatchObject({ assignee: { id: ben.id, name: 'Ben' } });
+
+      await service.update(created.id, { assigneeId: null }, me);
+      await expect(service.findOne(created.id)).resolves.toMatchObject({ assignee: null });
+    });
+
+    it('streams the raw columns the CSV export reads (AC3.14)', async () => {
+      // The export streams on its own connection, which can't see this transaction's rows, so the
+      // same query is streamed here on the transaction's connection
+      const rows: Record<string, unknown>[] = [];
+      for await (const row of await service['filteredQuery']({ search: 'Asg Ann high' }, me).stream()) {
+        rows.push(row as Record<string, unknown>);
+      }
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ task_assignee_id: ann.id, assignee_id: ann.id, assignee_name: 'Ann' });
+      expect(service['fromRaw'](rows[0] as never).assignee).toMatchObject({ id: ann.id, name: 'Ann' });
     });
   });
 });

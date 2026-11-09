@@ -1,22 +1,27 @@
 import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import type { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
+import { UsersService } from '../users/users.service';
 import { Task } from './task.entity';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
 
 // Runs the real controller, service and validation over HTTP; only the repository is mocked
 describe('GET /tasks/export', () => {
-  const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt,priority';
+  const HEADER = 'id,title,description,status,dueDate,isOverdue,createdAt,assignee,priority';
+  // Set on the request the way AuthGuard does it in the app ("Assigned to me" reads it)
+  const ALICE_ID = '00000000-0000-4000-8000-0000000000a1';
   let app: INestApplication;
   let baseUrl: string;
   const queryBuilder = {
+    leftJoin: jest.fn().mockReturnThis(),
     addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
-    skip: jest.fn().mockReturnThis(),
-    take: jest.fn().mockReturnThis(),
+    offset: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     setQueryRunner: jest.fn().mockReturnThis(),
     stream: jest.fn(),
@@ -30,9 +35,17 @@ describe('GET /tasks/export', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [TasksController],
-      providers: [TasksService, { provide: getRepositoryToken(Task), useValue: repository }],
+      providers: [
+        TasksService,
+        { provide: getRepositoryToken(Task), useValue: repository },
+        { provide: UsersService, useValue: {} },
+      ],
     }).compile();
     app = moduleRef.createNestApplication();
+    app.use((req: Request & { user?: object }, _res: Response, next: NextFunction) => {
+      req.user = { id: ALICE_ID, role: 'user' };
+      next();
+    });
     // Same options as the global pipe in main.ts
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.listen(0, '127.0.0.1');
@@ -88,6 +101,9 @@ describe('GET /tasks/export', () => {
           task_due_date: null,
           task_created_at: new Date('2026-01-15T08:00:00.000Z'),
           task_updated_at: new Date('2026-01-15T08:00:00.000Z'),
+          task_assignee_id: ALICE_ID,
+          assignee_id: ALICE_ID,
+          assignee_name: 'Alice',
         },
       ]),
     );
@@ -97,7 +113,7 @@ describe('GET /tasks/export', () => {
     expect(body).toBe(
       `\uFEFF${HEADER}\r\n` +
         '00000000-0000-4000-8000-000000000001,"\'=cmd, ""x""",Tiếng Việt,done,,false,' +
-        '2026-01-15T08:00:00.000Z,low\r\n',
+        '2026-01-15T08:00:00.000Z,Alice,low\r\n',
     );
   });
 
@@ -119,15 +135,27 @@ describe('GET /tasks/export', () => {
     );
   });
 
+  it('passes "assignee=me" as the logged-in user to the filter (AC3.8)', async () => {
+    await get('?assignee=me');
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.assigneeId = :userId', { userId: ALICE_ID });
+  });
+
+  it('passes "assignee=unassigned" to the filter (AC3.16)', async () => {
+    await get('?assignee=unassigned');
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('task.assigneeId IS NULL');
+  });
+
   it('ignores page and limit and exports every matching task', async () => {
     const res = await get('?page=2&limit=5');
 
     expect(res.status).toBe(200);
-    expect(queryBuilder.skip).not.toHaveBeenCalled();
-    expect(queryBuilder.take).not.toHaveBeenCalled();
+    expect(queryBuilder.offset).not.toHaveBeenCalled();
+    expect(queryBuilder.limit).not.toHaveBeenCalled();
   });
 
-  it.each(['?status=archived', '?tab=late', '?priority=urgent', '?priority=High'])('rejects %s with 400', async (query) => {
+  it.each(['?status=archived', '?tab=late', '?priority=urgent', '?priority=High', '?assignee=bob'])('rejects %s with 400', async (query) => {
     const res = await get(query);
 
     expect(res.status).toBe(400);

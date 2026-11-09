@@ -30,6 +30,18 @@ describe('ListTasksQuery', () => {
     await expect(parse({ priority })).rejects.toThrow(BadRequestException);
   });
 
+  it.each(['me', 'unassigned'])('accepts assignee=%p (AC3.8, AC3.16)', async (assignee) => {
+    await expect(parse({ assignee })).resolves.toMatchObject({ assignee });
+  });
+
+  it('leaves assignee undefined when omitted ("Anyone")', async () => {
+    expect((await parse({})).assignee).toBeUndefined();
+  });
+
+  it.each(['bob', 'Me', 'anyone', ''])('rejects assignee=%p with 400', async (assignee) => {
+    await expect(parse({ assignee })).rejects.toThrow(BadRequestException);
+  });
+
   // The overdue filter was replaced by tab=overdue; the global pipe drops unknown params
   it('drops the old overdue param', async () => {
     await expect(parse({ overdue: 'true' })).resolves.not.toHaveProperty('overdue');

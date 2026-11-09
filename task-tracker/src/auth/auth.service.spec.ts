@@ -32,7 +32,7 @@ describe('AuthService', () => {
   });
 
   it('returns only the name and role on a correct login (AC1.3, AC1.13)', async () => {
-    await expect(login('alice@example.com', 'Passw0rd')).resolves.toEqual({ name: 'Alice', role: 'user' });
+    await expect(login('alice@example.com', 'Passw0rd')).resolves.toEqual({ id: alice.id, name: 'Alice', role: 'user' });
   });
 
   it('sets an HttpOnly, persistent session cookie for this user (AC1.18)', async () => {
@@ -68,6 +68,6 @@ describe('AuthService', () => {
   });
 
   it('returns the logged-in user without the hash or email', () => {
-    expect(service.me(alice)).toEqual({ name: 'Alice', role: 'user' });
+    expect(service.me(alice)).toEqual({ id: alice.id, name: 'Alice', role: 'user' });
   });
 });

@@ -75,6 +75,33 @@ describe('UsersService.replaceAll (PostgreSQL)', () => {
     await expect(service.replaceAll([ann])).resolves.toEqual({ loaded: 1, removed: 0 });
   });
 
+  describe('listActive', () => {
+    it('orders by name A to Z whatever the case, then by email (AC3.18, TC-79)', async () => {
+      // replaceAll marks every other user removed inside this transaction, so only these are listed
+      const annB = { ...entry('Ann'), email: 'ann.b.db-spec@example.com' };
+      await service.replaceAll([entry('Bob'), annB, entry('alice'), entry('Admin'), ann]);
+
+      const listed = await service.listActive();
+
+      expect(listed.map((u) => `${u.name} (${u.email})`)).toEqual([
+        'Admin (admin.db-spec@example.com)',
+        'alice (alice.db-spec@example.com)',
+        'Ann (ann.b.db-spec@example.com)',
+        'Ann (ann.db-spec@example.com)',
+        'Bob (bob.db-spec@example.com)',
+      ]);
+    });
+
+    it('returns only id, name and email, and leaves out removed users (AC3.7, AC3.15)', async () => {
+      await service.replaceAll([ann, ben]);
+      await service.replaceAll([ann]);
+
+      const listed = await service.listActive();
+
+      expect(listed).toEqual([{ id: (await row(ann.email)).id, name: 'Ann', email: ann.email }]);
+    });
+  });
+
   it('does not change any task', async () => {
     const tasks = queryRunner.manager.getRepository(Task);
     const snapshot = () =>
