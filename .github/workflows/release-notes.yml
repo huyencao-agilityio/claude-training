@@ -1,9 +1,12 @@
 name: Release notes
 
-# Builds client-facing release notes when a release tag (e.g. v1.5.0) is pushed: the tickets done between the previous
-# release tag and this one, grouped into New Features, Bug Fixes and Improvements. Technical PRs (chore, ci, test,
-# refactor, docs, dependencies) and PRs labelled skip-release-notes are left out. A PR whose labels, title and branch
-# don't say what it is goes to Improvements and is flagged in the "For the team" table.
+# Builds the client release notes when a release tag (e.g. v1.5.0) is pushed:
+#   - Content: the tickets done between the previous release tag and this one, one row per ticket.
+#   - Sections: New Features, Bug Fixes, Improvements, picked from the PR's labels first, then its title or branch prefix
+#     (feat/ → New Features, fix/ → Bug Fixes).
+#   - Left out: technical PRs (chore, ci, build, test, refactor, docs, dependencies) and PRs labelled
+#     skip-release-notes or ignore-for-release. Use one of these labels for internal work with a feat/fix prefix.
+#   - Unclear PRs (labels, title and branch say nothing) go to Improvements and are flagged in the "For the team" table.
 # Uploads release-notes-<tag>.md as a workflow artifact and shows it in the run summary, followed by a
 # "For the team" table that shows where each PR went. It also commits the file to docs/release-notes/ on the
 # release-notes branch, where the release-note-email skill reads it. That branch only holds release notes: it is never
