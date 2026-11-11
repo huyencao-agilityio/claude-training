@@ -10,3 +10,7 @@ docs/release-notes/
 *.pem
 *.key
 id_rsa*
+
+# Python (claude-api-lab)
+.venv/
+__pycache__/

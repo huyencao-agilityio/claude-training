@@ -1,0 +1,23 @@
+[
+  {"ticket": "I was charged twice for my March subscription. Please refund one of the payments.", "expected": "billing"},
+  {"ticket": "Where can I download the invoice for last month? Our accountant needs it.", "expected": "billing"},
+  {"ticket": "My credit card expired. How do I add a new card so my plan doesn't stop?", "expected": "billing"},
+  {"ticket": "The checkout page froze and now I see two charges of $29 on my bank statement.", "expected": "billing"},
+  {"ticket": "I upgraded to Pro yesterday and paid, but my workspace still shows the Free plan.", "expected": "billing"},
+  {"ticket": "The app crashes every time I open the Reports page on Android.", "expected": "technical"},
+  {"ticket": "Exporting a project to CSV gives me an empty file.", "expected": "technical"},
+  {"ticket": "Since this morning the dashboard takes more than a minute to load.", "expected": "technical"},
+  {"ticket": "Notifications stopped working after the last update. I don't get any alerts.", "expected": "technical"},
+  {"ticket": "I forgot my password and the reset email never arrives.", "expected": "account"},
+  {"ticket": "How do I change the email address on my profile? I have a new work email.", "expected": "account"},
+  {"ticket": "Please delete my account and all my personal data.", "expected": "account"},
+  {"ticket": "I lost my phone and can't pass two-factor authentication anymore. How do I get back in?", "expected": "account"},
+  {"ticket": "Someone logged into my account from another country. I didn't do that!", "expected": "account"},
+  {"ticket": "hi, cant login, it just says error 500 after i type my password", "expected": "technical"},
+  {"ticket": "The billing page shows a blank screen when I click 'Update card'.", "expected": "technical"},
+  {"ticket": "The 'Download invoice' button does nothing when I click it, in Chrome and Firefox.", "expected": "technical"},
+  {"ticket": "I pay for Premium only for recurring tasks, and they have been broken all week. Fix it.", "expected": "technical"},
+  {"ticket": "Recurring tasks have been broken for two weeks, so I want my money back for this month.", "expected": "billing"},
+  {"ticket": "I can't log in to download my invoice, it says my account is locked.", "expected": "account"},
+  {"ticket": "Error 403 when I open Settings > Profile to change my display name.", "expected": "technical"}
+]

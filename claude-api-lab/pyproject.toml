@@ -1,0 +1,20 @@
+[project]
+name = "claude-api-lab"
+version = "0.1.0"
+description = "Runnable code for the Building with the Claude API course, one file per lesson"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic<1",
+    "python-dotenv",
+]
+
+# Installed in editable mode by `uv sync`, only so that src/ is on the import
+# path: lessons live in one folder per section (src/section_N_.../) and still
+# import the shared src/common.py with `from common import ...`.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/common.py"]
+sources = ["src"]
