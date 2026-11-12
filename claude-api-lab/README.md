@@ -22,6 +22,9 @@ One folder per course section, named like the sections in the notes. Each lesson
 | `lesson_2_ticket_classifier_eval.py` | 2.2 to 2.6: runs prompts v0, v1, v2 on a dataset, grades each answer by code (format + expected label), prints the misses and the average score |
 | **`src/section_4_tool_use/`** | **4. Tool use with Claude** |
 | `lesson_4_3_tool_functions.py` | 4.3: the `get_current_datetime` tool on its own (incl. a bad input), then "What time is it?" without the tool vs with it: tool request → app runs it → result back → answer |
+| `lesson_4_11_text_edit_tool.py` | 4.11: the built-in text editor tool in a temporary folder: Claude views, edits and creates files; the app runs each command with a path check |
+| `lesson_4_10_fine_grained_tool_calling.py` | 4.10: the same tool call streamed two ways: basic tool streaming (bursts, always valid JSON) vs fine-grained beta (chunks as written, check the JSON) |
+| `lesson_4_8_multiple_turns.py` | 4.8: helpers (`chat`, `run_tool`, `run_tools`) and `run_conversation()`, a loop that runs tools until Claude stops asking for them (max 5 turns) |
 | `pyproject.toml` | Dependencies: `anthropic` SDK and `python-dotenv`; also puts `src/` on the import path so lessons in subfolders can import `common` |
 | `uv.lock` | Exact versions uv installs. Commit it, don't edit it by hand |
 | `.env.example` | Template for `.env` (your API key) |
