@@ -854,45 +854,120 @@ Claude decides                   "the user asks the time → call get_current_da
 
 **Lab:** the schema is `GET_CURRENT_DATETIME_SCHEMA` in [lesson_4_3_tool_functions.py](../../claude-api-lab/src/section_4_tool_use/lesson_4_3_tool_functions.py).
 
-### 4.5 Handling message blocks
+### 4.5-4.6 [Handling message blocks](https://academy.claude.com/courses/building-with-the-claude-api/handling-message-blocks) and [sending tool results](https://academy.claude.com/courses/building-with-the-claude-api/sending-tool-results)
 
-_Not started_
+**Purpose:** one tool round trip. When Claude uses a tool, its reply has several blocks, not one text block. Your code runs the tool and sends the result back, then Claude gives the final answer.
 
-### 4.6 Sending tool results
+**Flow (one round):**
 
-_Not started_
+```text
+1. You    → Claude: user message + tools
+2. Claude → you:    text block + tool_use block (ID, tool name, input)
+3. You:   save the FULL reply as the assistant message
+4. You:   run the tool with that input
+5. You    → Claude: user message holding a tool_result block (same ID)
+6. Claude → you:    final answer (text only)
+```
 
-### 4.7 Multi-turn conversations with tools
+**Key points**
 
-_Not started_
+- Claude keeps no history: resend the whole conversation on every call.
+- Keep both the text and the tool_use block in the assistant message. Saving only the text loses the tool call.
+- Each tool_result must carry the `tool_use_id` of its request. With several tool calls in one reply, results can come back in any order, so the ID is what matches them.
+- Helper functions such as `add_assistant_message()` must accept a list of blocks, not only a string.
+- Keep the `tools` list in follow-up calls, even when you do not expect another tool call.
 
-### 4.8 Implementing multiple turns
+**Lab:** the tool-enabled call is in [lesson_4_3_tool_functions.py](../../claude-api-lab/src/section_4_tool_use/lesson_4_3_tool_functions.py).
 
-_Not started_
+### 4.7 [Multi-turn conversations with tools](https://academy.claude.com/courses/building-with-the-claude-api/multi-turn-conversations-with-tools)
 
-### 4.9 Using multiple tools
+**Purpose:** one question can need several tools in a row. Example: "What day is 103 days from today?" needs today's date first, then a date calculation. The app must loop until Claude stops asking for tools.
 
-_Not started_
+**Flow (multiple tools):**
 
-### 4.10 Fine-grained tool calling
+```text
+User: "What day is 103 days from today?"
+  ▼
+Claude → tool_use: get_current_datetime
+  ▼ app runs it, sends tool_result back
+Claude → tool_use: add_duration_to_datetime
+  ▼ app runs it, sends tool_result back
+Claude → text only: "103 days from today is …"  → STOP, show answer
+```
 
-_Not started_
+**The loop**
 
-### 4.11 The text edit tool
+1. Call Claude with the whole history and the tools.
+2. Add Claude's reply to the history as an assistant message.
+3. No tool_use block in the reply → stop, the text is the final answer.
+4. Otherwise run each requested tool, put all results in one user message, add it to the history, go to step 1.
 
-_Not started_
+**Key points**
 
-### 4.12 The web search tool
+- Multi-tool answers come from a loop, not from one call.
+- Helpers must accept content blocks, return the full message, and have an optional `tools` parameter.
+- A text-extraction helper joins the text blocks when showing the answer.
+- Next lesson, 4.8, builds the loop itself.
 
-_Not started_
+### 4.8 [Implementing multiple turns](https://academy.claude.com/courses/building-with-the-claude-api/implementing-multiple-turns)
 
-### Section takeaway
+**Purpose:** turn the 4.7 flow into code: a loop that stops when Claude gives a final answer.
 
--
+**Stop signal:** `stop_reason == "tool_use"` means keep looping; anything else means done.
 
-### Quiz notes
+**Key points**
 
--
+- Add a turn cap as a safety stop; the course's loop has none.
+- Every tool_use block needs a matching tool_result, even when the tool fails: send the error as a result with `is_error` set.
+- Route tool names through one dispatch function, so new tools do not change the loop.
+
+**Lab:** [lesson_4_8_multiple_turns.py](../../claude-api-lab/src/section_4_tool_use/lesson_4_8_multiple_turns.py). Next: 4.9, multiple tools.
+
+### 4.9 [Using multiple tools](https://academy.claude.com/courses/building-with-the-claude-api/using-multiple-tools)
+
+**Purpose:** add more tools to the same loop; Claude chains them when one answer needs both (e.g. compute a date, then set a reminder for it).
+
+**Add a tool in 4 steps:** write the function, write its schema, add the schema to the `tools` list, add a case in the tool router. The loop does not change.
+
+**Key points**
+
+- Date maths goes to a tool: Claude is not reliable at it.
+- One reply can mix text and several tool requests; run them all in one step.
+
+### 4.10 [Fine-grained tool calling](https://academy.claude.com/courses/building-with-the-claude-api/fine-grained-tool-calling)
+
+**Purpose:** how the tool's JSON arguments arrive while Claude writes them.
+
+| | Basic tool streaming (default) | Fine-grained (beta) |
+|---|---|---|
+| How chunks arrive | Gathered per top-level key, then sent in a burst | As Claude writes them, no buffering |
+| Feel in the UI | Pauses, then a block appears | Smooth, text grows steadily |
+| JSON validity | Always valid | Can be incomplete or invalid until the end |
+| Your code must | Just parse | Check the JSON before using it |
+| Enable | Nothing extra | Beta header + `eager_input_streaming` on the tool |
+
+**Use fine-grained when** you show tool-argument progress in the UI or start work on partial arguments early. **Otherwise keep the default.**
+
+**Lab:** [lesson_4_10_fine_grained_tool_calling.py](../../claude-api-lab/src/section_4_tool_use/lesson_4_10_fine_grained_tool_calling.py) streams the same tool call both ways and prints the chunk timings.
+
+### 4.11 [The text edit tool](https://academy.claude.com/courses/building-with-the-claude-api/the-text-edit-tool)
+
+**Purpose:** a built-in tool that lets Claude view, change and create files. Claude knows the tool; your code must do the file work.
+
+**Your side**
+
+- Send only a short stub in `tools`; its type and name depend on the model family.
+- Carry out each command Claude asks for, then send the result back in the same loop as before.
+- Limit the paths: only allow files inside a folder you choose.
+
+| Command | What Claude uses it for |
+|---|---|
+| `view` | Show a folder listing or a file, or a line range |
+| `str_replace` | Replace one exact piece of text (must match once) |
+| `create` | Create a new file |
+| `insert` | Insert text after a given line |
+
+**Lab:** [lesson_4_11_text_edit_tool.py](../../claude-api-lab/src/section_4_tool_use/lesson_4_11_text_edit_tool.py) works in a temporary folder: Claude views `main.py`, adds a docstring, and creates `test_main.py`.
 
 ---
 
